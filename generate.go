@@ -208,7 +208,6 @@ func (world *World) GenerateDungeonGrid(roomCount int) error {
 				for i := 0; i < len(previousRooms[l]); i++ { // start from beginning
 					roomCoord := previousRooms[l][i]
 					roomCount := countAdj(roomCoord.y, roomCoord.x)
-					log.Println(roomCount, roomCoord)
 					if roomCount > 0 && roomCount <= 2 {
 						sx = roomCoord.x
 						sy = roomCoord.y
@@ -234,7 +233,6 @@ func (world *World) GenerateDungeonGrid(roomCount int) error {
 	}
 
 	for pr := 0; pr < len(previousRooms); pr++ {
-		log.Println(previousRooms[pr])
 		for i, cur := range previousRooms[pr] {
 			sy, sx = cur.y, cur.x
 
@@ -250,7 +248,6 @@ func (world *World) GenerateDungeonGrid(roomCount int) error {
 			}
 			prev := previousRooms[pr][i-1]
 			dx, dy := cur.x-prev.x, cur.y-prev.y
-			log.Println(i, cur, prev, dy, dx)
 			var x1, x2, y1, y2 = prev.x * s, cur.x * s, prev.y * s, cur.y * s
 			switch {
 			case dx == -1: // right
@@ -268,7 +265,7 @@ func (world *World) GenerateDungeonGrid(roomCount int) error {
 				x1--
 				x2++
 			default:
-				log.Println("dx,dy > abs 1", cur, prev, dx, dy)
+				log.Println("somehow, dx,dy > abs 1", cur, prev, dx, dy)
 			}
 
 			for x := x1; x < x2; x++ {
