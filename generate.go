@@ -46,6 +46,11 @@ type World struct {
 	Tiles         [][]Tile // indexed [y][x]
 	Border        int      // don't place tiles in this area
 
+	startTime           time.Time // for generation retry
+	DurationBeforeRetry time.Duration
+	genStartTime        time.Time // for error
+	DurationBeforeError time.Duration
+
 	WallThickness int // how many tiles thick the walls are
 	CorridorSize  int
 	MaxRoomWidth  int
@@ -60,10 +65,12 @@ var (
 	ErrOutOfBounds = errors.New("Coordinate out of bounds")
 	// ErrNotEnoughSpace is returned when there isn't enough space to generate the dungeon
 	ErrNotEnoughSpace = errors.New("Not enough space to generate dungeon")
+	// ErrGenerationTimeout is returned when generation has deadlocked
+	ErrGenerationTimeout = errors.New("Took too long to generate dungeon")
 )
 
 // NewWorld returns a new World instance
-func NewWorld(height, width int) *World {
+func NewWorld(width, height int) *World {
 	s1 := rand.NewSource(time.Now().UnixNano())
 	rng = rand.New(s1)
 
@@ -76,6 +83,10 @@ func NewWorld(height, width int) *World {
 		Height: height,
 		Tiles:  tiles,
 		Border: 2,
+
+		startTime:           time.Now(),
+		DurationBeforeRetry: time.Millisecond * 250,
+		DurationBeforeError: time.Second * 2,
 
 		WallThickness: 2,
 
@@ -157,131 +168,135 @@ func (world *World) GenerateRandomWalk(tileCount int) error {
 // the height of the rooms as all rooms are the same size and shape.
 // world.WallThickness, world.MaxRoomWidth and world.CorridorSize are used
 func (world *World) GenerateDungeonGrid(roomCount int) error {
+	world.genStartTime = time.Now()
+
 	s := world.MaxRoomWidth
 	mw := (world.Width - world.Border*2) / s
 	mh := (world.Height - world.Border*2) / s
-	sx, sy := int(mw/2), int(mh/2)
 
-	fmt.Printf("Max grid size is %d x %d, so max roomCount is %d\n", mw-2, mh-2, (mw-2)*(mh-2))
+	fmt.Printf("Max grid size is %d x %d, so max roomCount is %d. Use fewer rooms for a better result.\n", mw-2, mh-2, (mw-2)*(mh-2))
 
 	if roomCount > (mw-2)*(mh-2) {
 		return ErrNotEnoughSpace
 	}
 
-	// Create rooms layout data structure
-	rooms := make([][]bool, mh)
-	for i := range rooms {
-		rooms[i] = make([]bool, mh)
-	}
-
-	// Create the actual rooms layout
-	type coord struct {
-		x, y int
-	}
-	previousRooms := make([][]coord, 1)
-	for ; roomCount > 0; roomCount-- {
-		switch rng.Int() % 4 {
-		case 0:
-			sx--
-		case 1:
-			sx++
-		case 2:
-			sy--
-		case 3:
-			sy++
+	var g func() error
+	g = func() error {
+		sx, sy := int(mw/2), int(mh/2)
+		world.startTime = time.Now()
+		// Create rooms layout data structure
+		rooms := make([][]bool, mh)
+		for i := range rooms {
+			rooms[i] = make([]bool, mw)
 		}
 
-		countAdj := func(iy, ix int) int {
-			var count int
-			if iy > 0 && rooms[iy-1][ix] {
-				count++
+		// Create the actual rooms layout
+		type coord struct {
+			x, y int
+		}
+		previousRooms := make([][]coord, 1)
+		for rc := roomCount; rc > 0; rc-- {
+			if time.Now().Sub(world.genStartTime) > world.DurationBeforeError {
+				return ErrGenerationTimeout
+			} else if time.Now().Sub(world.startTime) > world.DurationBeforeRetry {
+				log.Println("Timeout, retrying gen")
+				return g()
 			}
-			if iy+1 < mh && rooms[iy+1][ix] {
-				count++
+			switch rng.Int() % 4 {
+			case 0:
+				sx--
+			case 1:
+				sx++
+			case 2:
+				sy--
+			case 3:
+				sy++
 			}
-			if ix > 0 && rooms[iy][ix-1] {
-				count++
+
+			countAdj := func(iy, ix int) int {
+				var count int
+				if iy > 0 && rooms[iy-1][ix] {
+					count++
+				}
+				if iy+1 < mh && rooms[iy+1][ix] {
+					count++
+				}
+				if ix > 0 && rooms[iy][ix-1] {
+					count++
+				}
+				if ix+1 < mw && rooms[iy][ix+1] {
+					count++
+				}
+				return count
 			}
-			if ix+1 < mw && rooms[iy][ix+1] {
-				count++
+
+			if sx >= mw-1 || sx <= 0 || sy >= mh-1 || sy <= 0 || (countAdj(sy, sx) >= 2 && rooms[sy][sx]) {
+				rc++
+				for l := 0; l < len(previousRooms); l++ {
+					for i := 0; i < len(previousRooms[l]); i++ { // start from beginning
+						roomCoord := previousRooms[l][i]
+						rc := countAdj(roomCoord.y, roomCoord.x)
+						if rc >= 0 && rc <= 2 {
+							sx = roomCoord.x
+							sy = roomCoord.y
+							previousRooms = append(previousRooms, make([]coord, 0))
+							goto good
+						}
+					}
+				}
+				return ErrNotEnoughSpace
 			}
-			return count
+		good:
+			// Append room coord for rewinding purposes
+			rooms[sy][sx] = true
+			previousRooms[len(previousRooms)-1] = append(previousRooms[len(previousRooms)-1], coord{x: sx, y: sy})
 		}
 
-		if sx >= mw-1 || sx <= 0 || sy >= mh-1 || sy <= 0 {
-			// roomCount++
-			// l := len(previousRooms[len(previousRooms)-1])
-			for l := 0; l < len(previousRooms); l++ {
-				for i := 0; i < len(previousRooms[l]); i++ { // start from beginning
-					roomCoord := previousRooms[l][i]
-					roomCount := countAdj(roomCoord.y, roomCoord.x)
-					if roomCount > 0 && roomCount <= 2 {
-						sx = roomCoord.x
-						sy = roomCoord.y
-						previousRooms = append(previousRooms, make([]coord, 0))
-						goto good
+		for pr := 0; pr < len(previousRooms); pr++ {
+			// log.Println(previousRooms[pr])
+			for i, cur := range previousRooms[pr] {
+				sy, sx = cur.y, cur.x
+
+				// Fill in the world's tiles with the room
+				for dx := -world.MaxRoomWidth / 2; dx <= world.MaxRoomWidth/2-1; dx++ {
+					for dy := -world.MaxRoomWidth / 2; dy <= world.MaxRoomWidth/2-1; dy++ {
+						world.SetTile(sx*s+dx+sx*world.WallThickness, sy*s+dy+sy*world.WallThickness, TileFloor)
+					}
+				}
+
+				if i == 0 {
+					continue
+				}
+				prev := previousRooms[pr][i-1]
+				dx, dy := cur.x-prev.x, cur.y-prev.y
+				var x1, x2, y1, y2 = prev.x * s, cur.x * s, prev.y * s, cur.y * s
+				switch {
+				case dx == -1: // right
+					x1, x2 = x2, x1
+					y1 -= world.CorridorSize / 2
+					y2 += world.CorridorSize / 2
+				case dx == 1:
+					y1 -= world.CorridorSize / 2
+					y2 += world.CorridorSize / 2
+				case dy == -1:
+					y1, y2 = y2, y1
+					x1 -= world.CorridorSize / 2
+					x2 += world.CorridorSize / 2
+				case dy == 1:
+					x1 -= world.CorridorSize / 2
+					x2 += world.CorridorSize / 2
+				default:
+					log.Println("somehow, dx,dy > abs 1", cur, prev, dx, dy)
+				}
+
+				for x := x1; x < x2; x++ {
+					for y := y1; y < y2; y++ {
+						world.SetTile(x+sx*world.WallThickness, y+sy*world.WallThickness, TileFloor)
 					}
 				}
 			}
-
-			return ErrNotEnoughSpace
 		}
-
-	good:
-
-		if rooms[sy][sx] {
-			roomCount++
-		}
-
-		// Append room coord for rewinding purposes
-		rooms[sy][sx] = true
-		previousRooms[len(previousRooms)-1] = append(previousRooms[len(previousRooms)-1], coord{x: sx, y: sy})
-
+		return nil
 	}
-
-	for pr := 0; pr < len(previousRooms); pr++ {
-		for i, cur := range previousRooms[pr] {
-			sy, sx = cur.y, cur.x
-
-			// Fill in the world's tiles with the room
-			for dx := -world.MaxRoomWidth / 2; dx <= world.MaxRoomWidth/2-1; dx++ {
-				for dy := -world.MaxRoomWidth / 2; dy <= world.MaxRoomWidth/2-1; dy++ {
-					world.SetTile(sx*s+dx+sx*world.WallThickness, sy*s+dy+sy*world.WallThickness, TileFloor)
-				}
-			}
-
-			if i == 0 {
-				continue
-			}
-			prev := previousRooms[pr][i-1]
-			dx, dy := cur.x-prev.x, cur.y-prev.y
-			var x1, x2, y1, y2 = prev.x * s, cur.x * s, prev.y * s, cur.y * s
-			switch {
-			case dx == -1: // right
-				x1, x2 = x2, x1
-				y1 -= world.CorridorSize / 2
-				y2 += world.CorridorSize / 2
-			case dx == 1:
-				y1 -= world.CorridorSize / 2
-				y2 += world.CorridorSize / 2
-			case dy == -1:
-				y1, y2 = y2, y1
-				x1 -= world.CorridorSize / 2
-				x2 += world.CorridorSize / 2
-			case dy == 1:
-				x1 -= world.CorridorSize / 2
-				x2 += world.CorridorSize / 2
-			default:
-				log.Println("somehow, dx,dy > abs 1", cur, prev, dx, dy)
-			}
-
-			for x := x1; x < x2; x++ {
-				for y := y1; y < y2; y++ {
-					world.SetTile(x+sx*world.WallThickness, y+sy*world.WallThickness, TileFloor)
-				}
-			}
-		}
-	}
-
-	return nil
+	return g()
 }
