@@ -12,16 +12,17 @@ func main() {
 	log.SetFlags(log.Lshortfile)
 	w, h := 80, 80
 	world := gen.NewWorld(w, h)
-	err := world.GenerateDungeonGrid(16)
+	world.WallThickness = 2
+	world.CorridorSize = 4
+	world.MaxRoomWidth = 8
+	world.MaxRoomHeight = 9
+	world.MinRoomWidth = 4
+	world.MinRoomHeight = 4
+
+	err := world.GenerateDungeonGrid(5 * 5)
 	if err != nil {
 		log.Println(err)
 	}
-	world.WallThickness = 2
-	world.CorridorSize = 2
-	world.MaxRoomWidth = 8
-	world.MaxRoomHeight = 8
-	world.MinRoomWidth = 4
-	world.MinRoomHeight = 4
 	world.AddWalls()
 
 	for y := 0; y < h; y++ {

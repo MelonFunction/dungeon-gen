@@ -3,6 +3,7 @@ package generate
 
 import (
 	"errors"
+	"fmt"
 	"log"
 	"math/rand"
 	"time"
@@ -156,10 +157,16 @@ func (world *World) GenerateRandomWalk(tileCount int) error {
 // the height of the rooms as all rooms are the same size and shape.
 // world.WallThickness, world.MaxRoomWidth and world.CorridorSize are used
 func (world *World) GenerateDungeonGrid(roomCount int) error {
-	s := world.MaxRoomWidth + world.WallThickness*2
+	s := world.MaxRoomWidth
 	mw := (world.Width - world.Border*2) / s
 	mh := (world.Height - world.Border*2) / s
 	sx, sy := int(mw/2), int(mh/2)
+
+	fmt.Printf("Max grid size is %d x %d, so max roomCount is %d\n", mw-2, mh-2, (mw-2)*(mh-2))
+
+	if roomCount > (mw-2)*(mh-2) {
+		return ErrNotEnoughSpace
+	}
 
 	// Create rooms layout data structure
 	rooms := make([][]bool, mh)
@@ -201,7 +208,7 @@ func (world *World) GenerateDungeonGrid(roomCount int) error {
 			return count
 		}
 
-		if sx >= mw || sx <= 0 || sy >= mh || sy <= 0 {
+		if sx >= mw-1 || sx <= 0 || sy >= mh-1 || sy <= 0 {
 			// roomCount++
 			// l := len(previousRooms[len(previousRooms)-1])
 			for l := 0; l < len(previousRooms); l++ {
@@ -239,7 +246,7 @@ func (world *World) GenerateDungeonGrid(roomCount int) error {
 			// Fill in the world's tiles with the room
 			for dx := -world.MaxRoomWidth / 2; dx <= world.MaxRoomWidth/2-1; dx++ {
 				for dy := -world.MaxRoomWidth / 2; dy <= world.MaxRoomWidth/2-1; dy++ {
-					world.SetTile(sx*s+dx, sy*s+dy, TileFloor)
+					world.SetTile(sx*s+dx+sx*world.WallThickness, sy*s+dy+sy*world.WallThickness, TileFloor)
 				}
 			}
 
@@ -252,25 +259,25 @@ func (world *World) GenerateDungeonGrid(roomCount int) error {
 			switch {
 			case dx == -1: // right
 				x1, x2 = x2, x1
-				y1--
-				y2++
+				y1 -= world.CorridorSize / 2
+				y2 += world.CorridorSize / 2
 			case dx == 1:
-				y1--
-				y2++
+				y1 -= world.CorridorSize / 2
+				y2 += world.CorridorSize / 2
 			case dy == -1:
 				y1, y2 = y2, y1
-				x1--
-				x2++
+				x1 -= world.CorridorSize / 2
+				x2 += world.CorridorSize / 2
 			case dy == 1:
-				x1--
-				x2++
+				x1 -= world.CorridorSize / 2
+				x2 += world.CorridorSize / 2
 			default:
 				log.Println("somehow, dx,dy > abs 1", cur, prev, dx, dy)
 			}
 
 			for x := x1; x < x2; x++ {
 				for y := y1; y < y2; y++ {
-					world.SetTile(x, y, TileFloor)
+					world.SetTile(x+sx*world.WallThickness, y+sy*world.WallThickness, TileFloor)
 				}
 			}
 		}
