@@ -14,7 +14,7 @@ func main() {
 	w, h := 80, 80
 	world := gen.NewWorld(w, h)
 	world.Border = 2
-	world.WallThickness = 2
+	world.WallThickness = 1
 	world.CorridorSize = 4
 	world.MaxRoomWidth = 8
 	world.MaxRoomHeight = 8

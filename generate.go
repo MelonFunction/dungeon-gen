@@ -173,6 +173,11 @@ func (world *World) GenerateRandomWalk(tileCount int) error {
 	return nil
 }
 
+type coord struct {
+	x, y int
+	w, h int
+}
+
 // GenerateDungeonGrid generates the world using the dungeon grid function
 // The world will look neat, with rooms aligned perfectly in a grid. world.MaxRoomWidth is used for both the width and
 // the height of the rooms as all rooms are the same size and shape.
@@ -200,10 +205,6 @@ func (world *World) GenerateDungeonGrid(roomCount int) error {
 			rooms[i] = make([]bool, mw)
 		}
 
-		// Create the actual rooms layout
-		type coord struct {
-			x, y int
-		}
 		previousRooms := make([][]coord, 1)
 		for rc := roomCount; rc > 0; rc-- {
 			if time.Now().Sub(world.genStartTime) > world.DurationBeforeError {
@@ -343,10 +344,12 @@ func (world *World) GenerateDungeon(roomCount int) error {
 		placeRoom := func(x, y, w, h int) error {
 			log.Println(x, y, w, h)
 			// Check area
-			for dx := -w / 2; dx <= w/2-1; dx++ {
-				for dy := -h / 2; dy <= h/2-1; dy++ {
+			for dx := -w/2 - world.WallThickness; dx <= w/2-1+world.WallThickness; dx++ {
+				for dy := -h/2 - world.WallThickness; dy <= h/2-1+world.WallThickness; dy++ {
 					if tile, err := world.GetTile(x+dx, y+dy); err == nil && tile == TileFloor {
 						return ErrFloorAlreadyPlaced
+					} else if err != nil {
+						return err
 					}
 				}
 			}
@@ -379,6 +382,7 @@ func (world *World) GenerateDungeon(roomCount int) error {
 		// Place the first room into the world
 		placeRoom(sx, sy, rw, rh)
 
+		previousRooms := make([][]coord, 1)
 		for rc := roomCount - 1; rc > 0; rc-- {
 			if time.Now().Sub(world.genStartTime) > world.DurationBeforeError {
 				return ErrGenerationTimeout
@@ -390,8 +394,6 @@ func (world *World) GenerateDungeon(roomCount int) error {
 			// Offset position by last room
 			orw := rw
 			orh := rh
-			osx := sx
-			osy := sy
 			rw = randInt(world.MinRoomWidth, world.MaxRoomWidth)
 			rh = randInt(world.MinRoomHeight, world.MaxRoomHeight)
 			switch rng.Int() % 4 {
@@ -408,12 +410,20 @@ func (world *World) GenerateDungeon(roomCount int) error {
 			if err := placeRoom(sx, sy, rw, rh); err != nil {
 				log.Println("rollback:", err)
 				// rollback
-				sx = osx
-				sy = osy
-				rw = orw
-				rh = orh
+				for l := 0; l < len(previousRooms); l++ {
+					for i := range previousRooms[l] {
+						c := previousRooms[l][i]
+						sx = c.x
+						sy = c.y
+						rw = c.w
+						rh = c.h
+					}
+				}
 				rc++
+				continue
 			}
+
+			previousRooms[len(previousRooms)-1] = append(previousRooms[len(previousRooms)-1], coord{x: sx, y: sy, w: rw, h: rh})
 		}
 
 		return nil
