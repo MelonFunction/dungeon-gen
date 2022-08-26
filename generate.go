@@ -16,6 +16,7 @@ type Tile int8
 const (
 	TileVoid Tile = iota
 	TileWall
+	TilePreWall // placeholder for walls during generation
 	TileFloor
 )
 
@@ -23,6 +24,7 @@ const (
 const (
 	V = TileVoid
 	W = TileWall
+	P = TilePreWall
 	F = TileFloor
 )
 
@@ -30,13 +32,15 @@ func (t Tile) String() string {
 	switch t {
 	case TileVoid:
 		return "◾"
+	case TilePreWall:
+		return "🔳"
 	case TileWall:
 		return "⬜"
 	case TileFloor:
 		return "⬛"
 	}
 
-	return "UNDEFINED"
+	return "🚧"
 }
 
 // World represents the map, Tiles are stored in [y][x] order, but GetTile can be used with (x,y) order to simplify some
@@ -67,6 +71,8 @@ var (
 	ErrNotEnoughSpace = errors.New("Not enough space to generate dungeon")
 	// ErrGenerationTimeout is returned when generation has deadlocked
 	ErrGenerationTimeout = errors.New("Took too long to generate dungeon")
+	// ErrFloorAlreadyPlaced is returned when a floor tile is already placed
+	ErrFloorAlreadyPlaced = errors.New("Floor tile already placed")
 )
 
 // NewWorld returns a new World instance
@@ -99,8 +105,12 @@ func NewWorld(width, height int) *World {
 }
 
 // GetTile returns a tile
-func (world *World) GetTile(x, y int) Tile {
-	return world.Tiles[y][x]
+func (world *World) GetTile(x, y int) (Tile, error) {
+	w, h, b := world.Width, world.Height, world.Border
+	if x >= w-b || x < 0+b || y >= h-b || y < 0+b {
+		return TileVoid, ErrOutOfBounds
+	}
+	return world.Tiles[y][x], nil
 }
 
 // SetTile sets a tile
@@ -119,10 +129,10 @@ func (world *World) AddWalls() {
 	w, h, t := world.Width, world.Height, world.WallThickness
 	for y := 0; y < h; y++ {
 		for x := 0; x < w; x++ {
-			if world.GetTile(x, y) == TileFloor {
+			if tile, err := world.GetTile(x, y); err != nil && tile == TileFloor {
 				for dx := -t; dx <= t; dx++ {
 					for dy := -t; dy <= t; dy++ {
-						if world.GetTile(x+dx, y+dy) != TileFloor {
+						if tile, err := world.GetTile(x+dx, y+dy); err == nil && tile != TileFloor {
 							world.SetTile(x+dx, y+dy, TileWall)
 						}
 					}
@@ -130,13 +140,13 @@ func (world *World) AddWalls() {
 			}
 		}
 	}
-
 }
 
 // GenerateRandomWalk generates the world using the random walk function
 // The world will look chaotic yet natural and all tiles will be touching each other
 // world.WallThickness is used
 // Ensure that tileCount isn't too high or else world generation can take a while
+// TODO use world.CorridorSize to ensure that one tile wide passages can be avoided if value is >1
 func (world *World) GenerateRandomWalk(tileCount int) error {
 	w, h := world.Width, world.Height
 	x, y := w/2, h/2
@@ -151,7 +161,7 @@ func (world *World) GenerateRandomWalk(tileCount int) error {
 		case 3:
 			y++
 		}
-		if world.GetTile(x, y) == TileFloor {
+		if tile, err := world.GetTile(x, y); err == nil && tile == TileFloor {
 			tileCount++
 		} else if world.SetTile(x, y, TileFloor) == ErrOutOfBounds {
 			x = w / 2
@@ -299,4 +309,115 @@ func (world *World) GenerateDungeonGrid(roomCount int) error {
 		return nil
 	}
 	return g()
+}
+
+func maxInt(a, b int) (int, int) {
+	if a > b {
+		return a, b
+	}
+	return b, a
+}
+func randInt(a, b int) int {
+	return rng.Int()%(b+1-a) + a
+}
+
+// GenerateDungeon generates the world using a more fluid algorithm
+// The world will have randomly sized rooms
+// world.WallThickness, world.MinRoomWidth|Height, world.MaxRoomWidth|Height and world.CorridorSize are used
+func (world *World) GenerateDungeon(roomCount int) error {
+	world.genStartTime = time.Now()
+
+	s := world.MaxRoomWidth
+	mw := (world.Width - world.Border*2) / s
+	mh := (world.Height - world.Border*2) / s
+
+	if roomCount > (mw-2)*(mh-2) {
+		return ErrNotEnoughSpace
+	}
+
+	var g func() error
+	g = func() error {
+		world.startTime = time.Now()
+
+		// Helper func to place rooms
+		placeRoom := func(x, y, w, h int) error {
+			log.Println(x, y, w, h)
+			// Check area
+			for dx := -w / 2; dx <= w/2-1; dx++ {
+				for dy := -h / 2; dy <= h/2-1; dy++ {
+					if tile, err := world.GetTile(x+dx, y+dy); err == nil && tile == TileFloor {
+						return ErrFloorAlreadyPlaced
+					}
+				}
+			}
+			// Place
+			for dx := -w/2 - world.WallThickness; dx <= w/2-1+world.WallThickness; dx++ {
+				for dy := -h/2 - world.WallThickness; dy <= h/2-1+world.WallThickness; dy++ {
+					if dx < -w/2 || dx > w/2-1 || dy < -h/2 || dy > h/2-1 {
+						// Temp wall
+						if tile, err := world.GetTile(x+dx, y+dy); err == nil && tile == TileVoid {
+							if err := world.SetTile(x+dx, y+dy, TilePreWall); err != nil {
+								return err
+							}
+						}
+					} else {
+						// Floor
+						if err := world.SetTile(x+dx, y+dy, TileFloor); err != nil {
+							return err
+						}
+					}
+				}
+			}
+			return nil
+		}
+
+		// Random first room size
+		sx, sy := world.Width/2, world.Height/2
+		rw := randInt(world.MinRoomWidth, world.MaxRoomWidth)
+		rh := randInt(world.MinRoomHeight, world.MaxRoomHeight)
+
+		// Place the first room into the world
+		placeRoom(sx, sy, rw, rh)
+
+		for rc := roomCount - 1; rc > 0; rc-- {
+			if time.Now().Sub(world.genStartTime) > world.DurationBeforeError {
+				return ErrGenerationTimeout
+			} else if time.Now().Sub(world.startTime) > world.DurationBeforeRetry {
+				log.Println("Timeout, retrying gen")
+				return g()
+			}
+
+			// Offset position by last room
+			orw := rw
+			orh := rh
+			osx := sx
+			osy := sy
+			rw = randInt(world.MinRoomWidth, world.MaxRoomWidth)
+			rh = randInt(world.MinRoomHeight, world.MaxRoomHeight)
+			switch rng.Int() % 4 {
+			case 0:
+				sx = sx - orw/2 - world.WallThickness - rw/2
+			case 1:
+				sx = sx + orw/2 + world.WallThickness + rw/2
+			case 2:
+				sy = sy - orh/2 - world.WallThickness - rh/2
+			case 3:
+				sy = sy + orh/2 + world.WallThickness + rh/2
+			}
+
+			if err := placeRoom(sx, sy, rw, rh); err != nil {
+				log.Println("rollback:", err)
+				// rollback
+				sx = osx
+				sy = osy
+				rw = orw
+				rh = orh
+				rc++
+			}
+		}
+
+		return nil
+	}
+	return g()
+
 }
