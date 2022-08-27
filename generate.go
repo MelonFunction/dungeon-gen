@@ -129,13 +129,18 @@ func (world *World) AddWalls() {
 	w, h, t := world.Width, world.Height, world.WallThickness
 	for y := 0; y < h; y++ {
 		for x := 0; x < w; x++ {
-			if tile, err := world.GetTile(x, y); err != nil && tile == TileFloor {
-				for dx := -t; dx <= t; dx++ {
-					for dy := -t; dy <= t; dy++ {
-						if tile, err := world.GetTile(x+dx, y+dy); err == nil && tile != TileFloor {
-							world.SetTile(x+dx, y+dy, TileWall)
+			if tile, err := world.GetTile(x, y); err == nil {
+				switch tile {
+				case TileFloor:
+					for dx := -t; dx <= t; dx++ {
+						for dy := -t; dy <= t; dy++ {
+							if tile, err := world.GetTile(x+dx, y+dy); err == nil && tile == TileVoid {
+								world.SetTile(x+dx, y+dy, TileWall)
+							}
 						}
 					}
+				case TilePreWall:
+					world.SetTile(x, y, TileWall)
 				}
 			}
 		}
@@ -324,7 +329,7 @@ func randInt(a, b int) int {
 
 // GenerateDungeon generates the world using a more fluid algorithm
 // The world will have randomly sized rooms
-// world.WallThickness, world.MinRoomWidth|Height, world.MaxRoomWidth|Height and world.CorridorSize are used
+// world.WallThickness, world.MinRoomWidth|Height, world.MaxRoomWidth|Height, world.CorridorSize are used
 func (world *World) GenerateDungeon(roomCount int) error {
 	world.genStartTime = time.Now()
 
@@ -392,20 +397,42 @@ func (world *World) GenerateDungeon(roomCount int) error {
 			}
 
 			// Offset position by last room
+			osx := sx
+			osy := sy
 			orw := rw
 			orh := rh
 			rw = randInt(world.MinRoomWidth, world.MaxRoomWidth)
 			rh = randInt(world.MinRoomHeight, world.MaxRoomHeight)
+			cx, cy := osx, osy // corridor position
+			var cw, ch int
 			switch rng.Int() % 4 {
-			case 0:
+			case 0: // left
+				cw = world.WallThickness
+				ch = world.CorridorSize
 				sx = sx - orw/2 - world.WallThickness - rw/2
-			case 1:
+				cx = sx + rw/2
+				cy -= ch / 2
+			case 1: // right
+				cw = world.WallThickness
+				ch = world.CorridorSize
 				sx = sx + orw/2 + world.WallThickness + rw/2
-			case 2:
+				cx = sx - rw/2 - world.WallThickness
+				cy -= ch / 2
+			case 2: // up
+				cw = world.CorridorSize
+				ch = world.WallThickness
 				sy = sy - orh/2 - world.WallThickness - rh/2
-			case 3:
+				cy = sy + rh/2
+				cx -= cw / 2
+			case 3: // down
+				cw = world.CorridorSize
+				ch = world.WallThickness
 				sy = sy + orh/2 + world.WallThickness + rh/2
+				cy = sy - rh/2 - world.WallThickness
+				cx -= cw / 2
 			}
+
+			log.Println("cx,cy", cx, cy)
 
 			if err := placeRoom(sx, sy, rw, rh); err != nil {
 				log.Println("rollback:", err)
@@ -421,6 +448,15 @@ func (world *World) GenerateDungeon(roomCount int) error {
 				}
 				rc++
 				continue
+			}
+
+			// Corridors
+			for x := cx; x < cx+cw; x++ {
+				for y := cy; y < cy+ch; y++ {
+					log.Println(x, y)
+					if err := world.SetTile(x, y, TileFloor); err != nil {
+					}
+				}
 			}
 
 			previousRooms[len(previousRooms)-1] = append(previousRooms[len(previousRooms)-1], coord{x: sx, y: sy, w: rw, h: rh})
