@@ -22,14 +22,17 @@ func main() {
 	world.MinRoomHeight = 4
 	world.AllowRandomCorridorOffset = true
 
-	// err := world.GenerateRandomWalk(500)
-	err := world.GenerateDungeonGrid(5 * 5)
+	err := world.GenerateRandomWalk((80 * 80) / 4)
+	// err := world.GenerateDungeonGrid(5 * 5)
 	// err := world.GenerateDungeon(30)
 	if err != nil {
 		log.Println(err)
 	}
 
 	world.AddWalls()
+	for i := 0; i < 5; i++ {
+		world.CleanWalls(5)
+	}
 
 	for y := 0; y < h; y++ {
 		for x := 0; x < w; x++ {

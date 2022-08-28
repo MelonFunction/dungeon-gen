@@ -76,19 +76,23 @@ var (
 	ErrFloorAlreadyPlaced = errors.New("Floor tile already placed")
 )
 
+// ClearTiles clears the tiles from the world
+func (world *World) ClearTiles(width, height int) {
+	tiles := make([][]Tile, height)
+	for i := range tiles {
+		tiles[i] = make([]Tile, width)
+	}
+	world.Tiles = tiles
+}
+
 // NewWorld returns a new World instance
 func NewWorld(width, height int) *World {
 	s1 := rand.NewSource(time.Now().UnixNano())
 	rng = rand.New(s1)
 
-	tiles := make([][]Tile, height)
-	for i := range tiles {
-		tiles[i] = make([]Tile, width)
-	}
-	return &World{
+	world := &World{
 		Width:  width,
 		Height: height,
-		Tiles:  tiles,
 		Border: 2,
 
 		startTime:           time.Now(),
@@ -104,6 +108,8 @@ func NewWorld(width, height int) *World {
 		MinRoomWidth:              4,
 		MinRoomHeight:             4,
 	}
+	world.ClearTiles(width, height)
+	return world
 }
 
 // GetTile returns a tile
@@ -129,6 +135,8 @@ func (world *World) SetTile(x, y int, t Tile) error {
 // AddWalls adds a TileWall around every TileFloor
 func (world *World) AddWalls() {
 	w, h, t := world.Width, world.Height, world.WallThickness
+	b := world.Border
+	world.Border = 0
 	for y := 0; y < h; y++ {
 		for x := 0; x < w; x++ {
 			if tile, err := world.GetTile(x, y); err == nil {
@@ -147,37 +155,126 @@ func (world *World) AddWalls() {
 			}
 		}
 	}
+	world.Border = b
+}
+
+// CleanWalls replaces walls which don't have mustSurroundCount walls around them
+func (world *World) CleanWalls(mustSurroundCount int) {
+	w, h := world.Width, world.Height
+	for y := 0; y < h; y++ {
+		for x := 0; x < w; x++ {
+			if tile, err := world.GetTile(x, y); err == nil && tile == TileWall {
+				var count int
+				for dx := -1; dx <= 1; dx++ {
+					for dy := -1; dy <= 1; dy++ {
+						if !(dx == 0 && dy == 0) {
+							if tile, err := world.GetTile(x+dx, y+dy); err == nil && tile == TileFloor {
+								count++
+							}
+						}
+					}
+				}
+				if count >= mustSurroundCount {
+					world.SetTile(x, y, TileFloor)
+				}
+			}
+		}
+	}
 }
 
 // GenerateRandomWalk generates the world using the random walk function
 // The world will look chaotic yet natural and all tiles will be touching each other
-// world.WallThickness is used
+// world.Convexity, world.WallThickness and world.CorridorSize is used
 // Ensure that tileCount isn't too high or else world generation can take a while
-// TODO use world.CorridorSize to ensure that one tile wide passages can be avoided if value is >1
 func (world *World) GenerateRandomWalk(tileCount int) error {
+	world.genStartTime = time.Now()
+
 	w, h := world.Width, world.Height
-	x, y := w/2, h/2
-	for ; tileCount > 0; tileCount-- {
-		switch rng.Int() % 4 {
-		case 0:
-			x--
-		case 1:
-			x++
-		case 2:
-			y--
-		case 3:
-			y++
+
+	var g func() error
+	g = func() error {
+		world.ClearTiles(world.Width, world.Height)
+		x, y := w/2, h/2
+		minX, maxX, minY, maxY := w, 0, h, 0
+
+		for tc := 0; tc < tileCount; {
+			if time.Now().Sub(world.genStartTime) > world.DurationBeforeError {
+				return ErrGenerationTimeout
+			} else if time.Now().Sub(world.startTime) > world.DurationBeforeRetry {
+				log.Println("Timeout, retrying gen")
+				return g()
+			}
+
+			switch rng.Int() % 4 {
+			case 0:
+				x--
+			case 1:
+				x++
+			case 2:
+				y--
+			case 3:
+				y++
+			}
+			for dx := x - world.CorridorSize/2; dx < x+world.CorridorSize/2; dx++ {
+				for dy := y - world.CorridorSize/2; dy < y+world.CorridorSize/2; dy++ {
+					tc++
+					if tile, err := world.GetTile(dx, dy); err == nil && tile != TileVoid {
+						tc--
+					} else if world.SetTile(dx, dy, TileFloor) == ErrOutOfBounds {
+						x = w / 2
+						y = h / 2
+						tc--
+						goto cont
+					}
+				}
+			}
+
+			minX = minInt(minX, x)
+			maxX = maxInt(maxX, x)
+			minY = minInt(minY, y)
+			maxY = maxInt(maxY, y)
+		cont:
 		}
-		if tile, err := world.GetTile(x, y); err == nil && tile == TileFloor {
-			tileCount++
-		} else if world.SetTile(x, y, TileFloor) == ErrOutOfBounds {
-			x = w / 2
-			y = h / 2
-			tileCount++
+
+		// Check that the generation is acceptable
+		// TODO params
+		// Bounds
+		if (maxX-minX < w/2) && (maxY-minY < h/2) {
+			log.Println("bounds too small, retrying gen")
+			return g()
 		}
+		// Convexity
+		var convX, convY bool
+		// log.Println(minX, maxX, minY, maxY)
+		cy := minY + (maxY-minY)/2
+		world.SetTile(0, cy, TileWall)
+		var foundFloor, inGap bool
+		for cx := minX; cx < maxX; cx++ {
+			if tile, err := world.GetTile(cx, cy); err == nil {
+				switch tile {
+				case TileFloor:
+					if foundFloor && inGap {
+						convX = true
+						goto done
+					}
+					foundFloor = true
+				case TileVoid:
+					if foundFloor {
+						inGap = true
+					}
+				}
+			}
+		}
+	done:
+		if !(convX || convY) {
+			log.Println("no convexity, retrying gen")
+			return g()
+		}
+
+		return nil
 	}
 
-	return nil
+	return g()
 }
 
 type coord struct {
@@ -204,6 +301,7 @@ func (world *World) GenerateDungeonGrid(roomCount int) error {
 
 	var g func() error
 	g = func() error {
+		world.ClearTiles(world.Width, world.Height)
 		sx, sy := int(mw/2), int(mh/2)
 		world.startTime = time.Now()
 		// Create rooms layout data structure
@@ -367,6 +465,7 @@ func (world *World) GenerateDungeon(roomCount int) error {
 
 	var g func() error
 	g = func() error {
+		world.ClearTiles(world.Width, world.Height)
 		world.startTime = time.Now()
 
 		// Helper func to place rooms
