@@ -20,10 +20,11 @@ func main() {
 	world.MaxRoomHeight = 8
 	world.MinRoomWidth = 4
 	world.MinRoomHeight = 4
+	world.AllowRandomCorridorOffset = true
 
 	// err := world.GenerateRandomWalk(500)
-	// err := world.GenerateDungeonGrid(5 * 5)
-	err := world.GenerateDungeon(30)
+	err := world.GenerateDungeonGrid(5 * 5)
+	// err := world.GenerateDungeon(30)
 	if err != nil {
 		log.Println(err)
 	}

@@ -55,12 +55,13 @@ type World struct {
 	genStartTime        time.Time // for error
 	DurationBeforeError time.Duration
 
-	WallThickness int // how many tiles thick the walls are
-	CorridorSize  int
-	MaxRoomWidth  int
-	MaxRoomHeight int
-	MinRoomWidth  int
-	MinRoomHeight int
+	WallThickness             int // how many tiles thick the walls are
+	CorridorSize              int
+	AllowRandomCorridorOffset bool
+	MaxRoomWidth              int
+	MaxRoomHeight             int
+	MinRoomWidth              int
+	MinRoomHeight             int
 }
 
 var (
@@ -96,11 +97,12 @@ func NewWorld(width, height int) *World {
 
 		WallThickness: 2,
 
-		CorridorSize:  2,
-		MaxRoomWidth:  8,
-		MaxRoomHeight: 8,
-		MinRoomWidth:  4,
-		MinRoomHeight: 4,
+		CorridorSize:              2,
+		AllowRandomCorridorOffset: false,
+		MaxRoomWidth:              8,
+		MaxRoomHeight:             8,
+		MinRoomWidth:              4,
+		MinRoomHeight:             4,
 	}
 }
 
@@ -186,7 +188,7 @@ type coord struct {
 // GenerateDungeonGrid generates the world using the dungeon grid function
 // The world will look neat, with rooms aligned perfectly in a grid. world.MaxRoomWidth is used for both the width and
 // the height of the rooms as all rooms are the same size and shape.
-// world.WallThickness, world.MaxRoomWidth and world.CorridorSize are used
+// world.WallThickness, world.MaxRoomWidth and world.CorridorSize and world.AllowRandomCorridorOffset are used
 func (world *World) GenerateDungeonGrid(roomCount int) error {
 	world.genStartTime = time.Now()
 
@@ -283,24 +285,33 @@ func (world *World) GenerateDungeonGrid(roomCount int) error {
 				if i == 0 {
 					continue
 				}
+
+				// Corridors
 				prev := previousRooms[pr][i-1]
 				dx, dy := cur.x-prev.x, cur.y-prev.y
 				var x1, x2, y1, y2 = prev.x * s, cur.x * s, prev.y * s, cur.y * s
+				var offsetCy, offsetCx int
+				if world.AllowRandomCorridorOffset {
+					offsetCy = (world.MaxRoomWidth - world.CorridorSize)
+					offsetCy = randInt(-offsetCy/2, offsetCy/2)
+					offsetCx = (world.MaxRoomWidth - world.CorridorSize)
+					offsetCx = randInt(-offsetCx/2, offsetCx/2)
+				}
 				switch {
 				case dx == -1: // right
 					x1, x2 = x2, x1
-					y1 -= world.CorridorSize / 2
-					y2 += world.CorridorSize / 2
+					y1 = y1 - world.CorridorSize/2 - offsetCy
+					y2 = y2 + world.CorridorSize/2 - offsetCy
 				case dx == 1:
-					y1 -= world.CorridorSize / 2
-					y2 += world.CorridorSize / 2
+					y1 = y1 - world.CorridorSize/2 - offsetCy
+					y2 = y2 + world.CorridorSize/2 - offsetCy
 				case dy == -1:
 					y1, y2 = y2, y1
-					x1 -= world.CorridorSize / 2
-					x2 += world.CorridorSize / 2
+					x1 = x1 - world.CorridorSize/2 - offsetCx
+					x2 = x2 + world.CorridorSize/2 - offsetCx
 				case dy == 1:
-					x1 -= world.CorridorSize / 2
-					x2 += world.CorridorSize / 2
+					x1 = x1 - world.CorridorSize/2 - offsetCx
+					x2 = x2 + world.CorridorSize/2 - offsetCx
 				default:
 					log.Println("somehow, dx,dy > abs 1", cur, prev, dx, dy)
 				}
@@ -317,11 +328,23 @@ func (world *World) GenerateDungeonGrid(roomCount int) error {
 	return g()
 }
 
-func maxInt(a, b int) (int, int) {
-	if a > b {
-		return a, b
+func minInt(a, b int) int {
+	if a < b {
+		return a
 	}
-	return b, a
+	return b
+}
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+func absInt(a int) int {
+	if a < 0 {
+		return a * -1
+	}
+	return a
 }
 func randInt(a, b int) int {
 	return rng.Int()%(b+1-a) + a
@@ -329,7 +352,8 @@ func randInt(a, b int) int {
 
 // GenerateDungeon generates the world using a more fluid algorithm
 // The world will have randomly sized rooms
-// world.WallThickness, world.MinRoomWidth|Height, world.MaxRoomWidth|Height, world.CorridorSize are used
+// world.WallThickness, world.MinRoomWidth|Height, world.MaxRoomWidth|Height, world.CorridorSize and
+// world.AllowRandomCorridorOffset are used
 func (world *World) GenerateDungeon(roomCount int) error {
 	world.genStartTime = time.Now()
 
@@ -396,6 +420,8 @@ func (world *World) GenerateDungeon(roomCount int) error {
 				return g()
 			}
 
+			log.Println(rc)
+
 			// Offset position by last room
 			osx := sx
 			osy := sy
@@ -405,31 +431,38 @@ func (world *World) GenerateDungeon(roomCount int) error {
 			rh = randInt(world.MinRoomHeight, world.MaxRoomHeight)
 			cx, cy := osx, osy // corridor position
 			var cw, ch int
+			var offsetCy, offsetCx int
+			if world.AllowRandomCorridorOffset {
+				offsetCy = (minInt(rh, orh) - ch)
+				offsetCy = randInt(-offsetCy/2+world.CorridorSize/2, offsetCy/2-world.CorridorSize/2)
+				offsetCx = (minInt(rw, orw) - cw)
+				offsetCx = randInt(-offsetCx/2+world.CorridorSize/2, offsetCx/2-world.CorridorSize/2)
+			}
 			switch rng.Int() % 4 {
 			case 0: // left
 				cw = world.WallThickness
 				ch = world.CorridorSize
 				sx = sx - orw/2 - world.WallThickness - rw/2
 				cx = sx + rw/2
-				cy -= ch / 2
+				cy = cy - (ch / 2) + offsetCy
 			case 1: // right
 				cw = world.WallThickness
 				ch = world.CorridorSize
 				sx = sx + orw/2 + world.WallThickness + rw/2
 				cx = sx - rw/2 - world.WallThickness
-				cy -= ch / 2
+				cy = cy - (ch / 2) + offsetCy
 			case 2: // up
 				cw = world.CorridorSize
 				ch = world.WallThickness
 				sy = sy - orh/2 - world.WallThickness - rh/2
 				cy = sy + rh/2
-				cx -= cw / 2
+				cx = cx - (cw / 2) + offsetCx
 			case 3: // down
 				cw = world.CorridorSize
 				ch = world.WallThickness
 				sy = sy + orh/2 + world.WallThickness + rh/2
 				cy = sy - rh/2 - world.WallThickness
-				cx -= cw / 2
+				cx = cx - (cw / 2) + offsetCx
 			}
 
 			if err := placeRoom(sx, sy, rw, rh); err != nil {
