@@ -387,7 +387,7 @@ func (world *World) GenerateDungeon(roomCount int) error {
 		// Place the first room into the world
 		placeRoom(sx, sy, rw, rh)
 
-		previousRooms := make([][]coord, 1)
+		previousRooms := make([]coord, 1)
 		for rc := roomCount - 1; rc > 0; rc-- {
 			if time.Now().Sub(world.genStartTime) > world.DurationBeforeError {
 				return ErrGenerationTimeout
@@ -432,20 +432,14 @@ func (world *World) GenerateDungeon(roomCount int) error {
 				cx -= cw / 2
 			}
 
-			log.Println("cx,cy", cx, cy)
-
 			if err := placeRoom(sx, sy, rw, rh); err != nil {
 				log.Println("rollback:", err)
 				// rollback
-				for l := 0; l < len(previousRooms); l++ {
-					for i := range previousRooms[l] {
-						c := previousRooms[l][i]
-						sx = c.x
-						sy = c.y
-						rw = c.w
-						rh = c.h
-					}
-				}
+				c := previousRooms[rng.Int()%len(previousRooms)]
+				sx = c.x
+				sy = c.y
+				rw = c.w
+				rh = c.h
 				rc++
 				continue
 			}
@@ -454,12 +448,14 @@ func (world *World) GenerateDungeon(roomCount int) error {
 			for x := cx; x < cx+cw; x++ {
 				for y := cy; y < cy+ch; y++ {
 					log.Println(x, y)
-					if err := world.SetTile(x, y, TileFloor); err != nil {
+					if tile, err := world.GetTile(x, y); err == nil && tile != TileFloor {
+						if err := world.SetTile(x, y, TileFloor); err != nil {
+						}
 					}
 				}
 			}
 
-			previousRooms[len(previousRooms)-1] = append(previousRooms[len(previousRooms)-1], coord{x: sx, y: sy, w: rw, h: rh})
+			previousRooms = append(previousRooms, coord{x: sx, y: sy, w: rw, h: rh})
 		}
 
 		return nil

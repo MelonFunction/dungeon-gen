@@ -15,7 +15,7 @@ func main() {
 	world := gen.NewWorld(w, h)
 	world.Border = 2
 	world.WallThickness = 2
-	world.CorridorSize = 4
+	world.CorridorSize = 2
 	world.MaxRoomWidth = 8
 	world.MaxRoomHeight = 8
 	world.MinRoomWidth = 4
@@ -23,7 +23,7 @@ func main() {
 
 	// err := world.GenerateRandomWalk(500)
 	// err := world.GenerateDungeonGrid(5 * 5)
-	err := world.GenerateDungeon(20)
+	err := world.GenerateDungeon(30)
 	if err != nil {
 		log.Println(err)
 	}
