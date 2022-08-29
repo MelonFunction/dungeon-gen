@@ -231,6 +231,33 @@ func (world *World) CleanWalls(mustSurroundCount int) {
 	}
 }
 
+// CleanIslands removes the pockets of WallVoids floating in the sea of WallFloors
+func (world *World) CleanIslands() {
+	// Find islands
+	islands := make([]map[coord]struct{}, 0)
+	for x := 0; x < world.Width; x++ {
+		for y := 0; y < world.Height; y++ {
+			var found bool
+			for _, i := range islands {
+				c := coord{x: x, y: y}
+				if _, ok := i[c]; ok {
+					found = true
+				}
+			}
+			if !found {
+				c, m := world.countIslandPolar(x, y, TileVoid)
+				islands = append(islands, m)
+				// Remove island
+				if c < world.MinIslandSize {
+					for co := range m {
+						world.SetTile(co.x, co.y, TileFloor)
+					}
+				}
+			}
+		}
+	}
+}
+
 // GenerateRandomWalk generates the world using the random walk function
 // The world will look chaotic yet natural and all tiles will be touching each other
 // world.Convexity, world.WallThickness and world.CorridorSize is used
@@ -245,6 +272,7 @@ func (world *World) GenerateRandomWalk(tileCount int) error {
 		world.ClearTiles(world.Width, world.Height)
 		x, y := w/2, h/2
 		minX, maxX, minY, maxY := w, 0, h, 0
+		var dx, dy int
 
 		for tc := 0; tc < tileCount; {
 			if time.Now().Sub(world.genStartTime) > world.DurationBeforeError {
@@ -254,22 +282,30 @@ func (world *World) GenerateRandomWalk(tileCount int) error {
 				return g()
 			}
 
-			switch rng.Int() % 4 {
+			switch rng.Int() % 8 {
 			case 0:
-				x--
+				dx = -1
+				dy = 0
 			case 1:
-				x++
+				dx = 1
+				dy = 0
 			case 2:
-				y--
+				dx = 0
+				dy = -1
 			case 3:
-				y++
+				dx = 0
+				dy = 1
+			default:
+				// use the same direction as last time
 			}
-			for dx := x - world.CorridorSize/2; dx < x+world.CorridorSize/2; dx++ {
-				for dy := y - world.CorridorSize/2; dy < y+world.CorridorSize/2; dy++ {
+			x += dx
+			y += dy
+			for tx := x - world.CorridorSize/2; tx < x+world.CorridorSize/2; tx++ {
+				for ty := y - world.CorridorSize/2; ty < y+world.CorridorSize/2; ty++ {
 					tc++
-					if tile, err := world.GetTile(dx, dy); err == nil && tile != TileVoid {
+					if tile, err := world.GetTile(tx, ty); err == nil && tile != TileVoid {
 						tc--
-					} else if world.SetTile(dx, dy, TileFloor) == ErrOutOfBounds {
+					} else if world.SetTile(tx, ty, TileFloor) == ErrOutOfBounds {
 						x = w / 2
 						y = h / 2
 						tc--
@@ -285,29 +321,6 @@ func (world *World) GenerateRandomWalk(tileCount int) error {
 		cont:
 		}
 
-		// Find islands
-		islands := make([]map[coord]struct{}, 0)
-		for x := minX; x < maxX; x++ {
-			for y := minY; y < maxY; y++ {
-				var found bool
-				for _, i := range islands {
-					c := coord{x: x, y: y}
-					if _, ok := i[c]; ok {
-						found = true
-					}
-				}
-				if !found {
-					c, m := world.countIslandPolar(x, y, TileVoid)
-					islands = append(islands, m)
-					// Remove island
-					if c < world.MinIslandSize {
-						for co := range m {
-							world.SetTile(co.x, co.y, TileFloor)
-						}
-					}
-				}
-			}
-		}
 		// Check convexity
 		var convX bool
 		cy := minY + (maxY-minY)/2

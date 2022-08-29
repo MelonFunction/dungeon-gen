@@ -29,10 +29,13 @@ func main() {
 		log.Println(err)
 	}
 
+	world.CleanIslands()
+	world.CleanWalls(5)
+	world.CleanWalls(5)
+	world.CleanIslands()
+	world.CleanWalls(6)
+	world.CleanWalls(6)
 	world.AddWalls()
-	// for i := 0; i < 5; i++ {
-	// 	world.CleanWalls(5)
-	// }
 
 	for y := 0; y < h; y++ {
 		for x := 0; x < w; x++ {
