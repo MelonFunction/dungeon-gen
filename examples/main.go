@@ -30,9 +30,9 @@ func main() {
 	}
 
 	world.AddWalls()
-	for i := 0; i < 5; i++ {
-		world.CleanWalls(5)
-	}
+	// for i := 0; i < 5; i++ {
+	// 	world.CleanWalls(5)
+	// }
 
 	for y := 0; y < h; y++ {
 		for x := 0; x < w; x++ {

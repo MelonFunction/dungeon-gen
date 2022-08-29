@@ -62,6 +62,8 @@ type World struct {
 	MaxRoomHeight             int
 	MinRoomWidth              int
 	MinRoomHeight             int
+
+	MinIslandSize int // RandomWalk only; any TileVoid islands < this are filled with TileFloor
 }
 
 var (
@@ -107,6 +109,8 @@ func NewWorld(width, height int) *World {
 		MaxRoomHeight:             8,
 		MinRoomWidth:              4,
 		MinRoomHeight:             4,
+
+		MinIslandSize: 26,
 	}
 	world.ClearTiles(width, height)
 	return world
@@ -158,23 +162,68 @@ func (world *World) AddWalls() {
 	world.Border = b
 }
 
+func (world *World) countSurrounding(x, y int, checkType Tile) int {
+	var count int
+	for dx := -1; dx <= 1; dx++ {
+		for dy := -1; dy <= 1; dy++ {
+			if !(dx == 0 && dy == 0) {
+				if tile, err := world.GetTile(x+dx, y+dy); err == nil && tile == checkType {
+					count++
+				}
+			}
+		}
+	}
+	return count
+}
+
+func (world *World) countSurroundingPolar(x, y int, checkType Tile) int {
+	var count int
+	if tile, err := world.GetTile(x+1, y); err == nil && tile == checkType {
+		count++
+	}
+	if tile, err := world.GetTile(x-1, y); err == nil && tile == checkType {
+		count++
+	}
+	if tile, err := world.GetTile(x, y+1); err == nil && tile == checkType {
+		count++
+	}
+	if tile, err := world.GetTile(x, y-1); err == nil && tile == checkType {
+		count++
+	}
+	return count
+}
+
+func (world *World) countIslandPolar(x, y int, checkType Tile) (int, map[coord]struct{}) {
+	// recursively count neigboring tiles
+	m := make(map[coord]struct{})
+	var g func(x, y int)
+	g = func(x, y int) {
+		if tile, err := world.GetTile(x, y); err == nil && tile == checkType {
+			c := coord{x: x, y: y}
+			if _, ok := m[c]; !ok {
+				m[c] = struct{}{}
+				g(x+1, y)
+				g(x-1, y)
+				g(x, y+1)
+				g(x, y-1)
+			}
+		}
+	}
+	g(x, y)
+	var count int
+	for range m {
+		count++
+	}
+	return count, m
+}
+
 // CleanWalls replaces walls which don't have mustSurroundCount walls around them
 func (world *World) CleanWalls(mustSurroundCount int) {
 	w, h := world.Width, world.Height
 	for y := 0; y < h; y++ {
 		for x := 0; x < w; x++ {
 			if tile, err := world.GetTile(x, y); err == nil && tile == TileWall {
-				var count int
-				for dx := -1; dx <= 1; dx++ {
-					for dy := -1; dy <= 1; dy++ {
-						if !(dx == 0 && dy == 0) {
-							if tile, err := world.GetTile(x+dx, y+dy); err == nil && tile == TileFloor {
-								count++
-							}
-						}
-					}
-				}
-				if count >= mustSurroundCount {
+				if world.countSurrounding(x, y, TileFloor) >= mustSurroundCount {
 					world.SetTile(x, y, TileFloor)
 				}
 			}
@@ -236,6 +285,30 @@ func (world *World) GenerateRandomWalk(tileCount int) error {
 		cont:
 		}
 
+		// Find islands
+		islands := make([]map[coord]struct{}, 0)
+		for x := minX; x < maxX; x++ {
+			for y := minY; y < maxY; y++ {
+				var found bool
+				for _, i := range islands {
+					c := coord{x: x, y: y}
+					if _, ok := i[c]; ok {
+						found = true
+					}
+				}
+				if !found {
+					c, m := world.countIslandPolar(x, y, TileVoid)
+					islands = append(islands, m)
+					// Remove island
+					if c < world.MinIslandSize {
+						for co := range m {
+							world.SetTile(co.x, co.y, TileFloor)
+						}
+					}
+				}
+			}
+		}
+
 		// Check that the generation is acceptable
 		// TODO params
 		// Bounds
@@ -244,10 +317,9 @@ func (world *World) GenerateRandomWalk(tileCount int) error {
 			return g()
 		}
 		// Convexity
-		var convX, convY bool
+		var convX bool
 		// log.Println(minX, maxX, minY, maxY)
 		cy := minY + (maxY-minY)/2
-		world.SetTile(0, cy, TileWall)
 		var foundFloor, inGap bool
 		for cx := minX; cx < maxX; cx++ {
 			if tile, err := world.GetTile(cx, cy); err == nil {
@@ -266,7 +338,7 @@ func (world *World) GenerateRandomWalk(tileCount int) error {
 			}
 		}
 	done:
-		if !(convX || convY) {
+		if !convX {
 			log.Println("no convexity, retrying gen")
 			return g()
 		}
