@@ -308,17 +308,8 @@ func (world *World) GenerateRandomWalk(tileCount int) error {
 				}
 			}
 		}
-
-		// Check that the generation is acceptable
-		// TODO params
-		// Bounds
-		if (maxX-minX < w/2) && (maxY-minY < h/2) {
-			log.Println("bounds too small, retrying gen")
-			return g()
-		}
-		// Convexity
+		// Check convexity
 		var convX bool
-		// log.Println(minX, maxX, minY, maxY)
 		cy := minY + (maxY-minY)/2
 		var foundFloor, inGap bool
 		for cx := minX; cx < maxX; cx++ {
