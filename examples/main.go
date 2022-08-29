@@ -34,12 +34,14 @@ func main() {
 		world.WallThickness = 2
 		world.MinIslandSize = 26 // 26 is default
 		err = world.GenerateRandomWalk((80 * 80) / 4)
+		// clean up the lil floaters
 		world.CleanIslands()
 		world.CleanWalls(5)
 		world.CleanWalls(5)
 		world.CleanIslands()
 		world.CleanWalls(6)
 		world.CleanWalls(6)
+
 		world.AddWalls()
 	case DungeonGrid:
 		world.WallThickness = 2
