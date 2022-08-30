@@ -582,8 +582,8 @@ func (world *World) GenerateDungeon(roomCount int) error {
 		// Helper func to place rooms
 		placeRoom := func(x, y, w, h int) error {
 			// Check area
-			for dx := x - world.WallThickness; dx < x+w+world.WallThickness-1; dx++ {
-				for dy := y - world.WallThickness; dy < y+h+world.WallThickness-1; dy++ {
+			for dx := x - world.WallThickness; dx < x+w+world.WallThickness; dx++ {
+				for dy := y - world.WallThickness; dy < y+h+world.WallThickness; dy++ {
 					if tile, err := world.GetTile(dx, dy); err == nil && tile == TileFloor {
 						return ErrFloorAlreadyPlaced
 					} else if err != nil {
@@ -592,9 +592,9 @@ func (world *World) GenerateDungeon(roomCount int) error {
 				}
 			}
 			// Place
-			for dx := x - world.WallThickness; dx < x+w+world.WallThickness-1; dx++ {
-				for dy := y - world.WallThickness; dy < y+h+world.WallThickness-1; dy++ {
-					if dx < x || dx > x+w || dy < y || dy > y+h {
+			for dx := x - world.WallThickness; dx < x+w+world.WallThickness; dx++ {
+				for dy := y - world.WallThickness; dy < y+h+world.WallThickness; dy++ {
+					if dx < x || dx > x+w-1 || dy < y || dy > y+h-1 {
 						// Temp wall
 						if tile, err := world.GetTile(dx, dy); err == nil && tile == TileVoid {
 							if err := world.SetTile(dx, dy, TilePreWall); err != nil {

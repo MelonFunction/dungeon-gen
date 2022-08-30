@@ -67,10 +67,10 @@ func main() {
 			}
 		}
 	}
-	// for room := range world.Rooms {
-	// 	world.Tiles[room.Y][room.X] = gen.TileRoomBegin
-	// 	world.Tiles[room.Y+room.H-1][room.X+room.W-1] = gen.TileRoomEnd
-	// }
+	for room := range world.Rooms {
+		world.Tiles[room.Y][room.X] = gen.TileRoomBegin
+		world.Tiles[room.Y+room.H-1][room.X+room.W-1] = gen.TileRoomEnd
+	}
 
 	for y := 0; y < h; y++ {
 		for x := 0; x < w; x++ {
