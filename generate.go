@@ -113,7 +113,7 @@ func NewWorld(width, height int) *World {
 
 		startTime:           time.Now(),
 		DurationBeforeRetry: time.Millisecond * 250,
-		DurationBeforeError: time.Second * 2,
+		DurationBeforeError: time.Second,
 
 		Border:                    2,
 		WallThickness:             2,
@@ -470,8 +470,8 @@ func (world *World) GenerateDungeonGrid(roomCount int) error {
 				}] = struct{}{}
 
 				// Fill in the world's tiles with the room
-				for dx := -world.MaxRoomWidth / 2; dx <= world.MaxRoomWidth/2-1; dx++ {
-					for dy := -world.MaxRoomWidth / 2; dy <= world.MaxRoomWidth/2-1; dy++ {
+				for dx := -world.MaxRoomWidth / 2; dx < world.MaxRoomWidth/2+world.MaxRoomWidth%2; dx++ {
+					for dy := -world.MaxRoomWidth / 2; dy < world.MaxRoomWidth/2+world.MaxRoomWidth%2; dy++ {
 						world.SetTile(sx*s+dx+sx*world.WallThickness, sy*s+dy+sy*world.WallThickness, TileFloor)
 					}
 				}
@@ -496,25 +496,25 @@ func (world *World) GenerateDungeonGrid(roomCount int) error {
 				}
 				switch {
 				case dx == -1: // left
-					x1 = x2 + world.MaxRoomWidth/2
+					x1 = x2 + world.MaxRoomWidth/2 + world.MaxRoomWidth%2
 					x2 = x1 + world.WallThickness
 					y1 = y1 - world.CorridorSize/2 - offsetCy
-					y2 = y2 + world.CorridorSize/2 - offsetCy
+					y2 = y2 + world.CorridorSize/2 + world.CorridorSize%2 - offsetCy
 				case dx == 1:
 					x1 = x2 - world.MaxRoomWidth/2 - world.WallThickness
 					x2 = x1 + world.WallThickness
 					y1 = y1 - world.CorridorSize/2 - offsetCy
-					y2 = y2 + world.CorridorSize/2 - offsetCy
+					y2 = y2 + world.CorridorSize/2 + world.CorridorSize%2 - offsetCy
 				case dy == -1:
-					y1 = y2 + world.MaxRoomWidth/2
+					y1 = y2 + world.MaxRoomWidth/2 + world.MaxRoomWidth%2
 					y2 = y1 + world.WallThickness
 					x1 = x1 - world.CorridorSize/2 - offsetCx
-					x2 = x2 + world.CorridorSize/2 - offsetCx
+					x2 = x2 + world.CorridorSize/2 + world.CorridorSize%2 - offsetCx
 				case dy == 1:
 					y1 = y2 - world.MaxRoomWidth/2 - world.WallThickness
 					y2 = y1 + world.WallThickness
 					x1 = x1 - world.CorridorSize/2 - offsetCx
-					x2 = x2 + world.CorridorSize/2 - offsetCx
+					x2 = x2 + world.CorridorSize/2 + world.CorridorSize%2 - offsetCx
 				default:
 					log.Println("somehow, dx,dy > abs 1", cur, prev, dx, dy)
 				}
@@ -579,14 +579,12 @@ func (world *World) GenerateDungeon(roomCount int) error {
 	g = func() error {
 		world.ResetWorld(world.Width, world.Height)
 		world.startTime = time.Now()
-
 		// Helper func to place rooms
 		placeRoom := func(x, y, w, h int) error {
-			log.Println(x, y, w, h)
 			// Check area
-			for dx := -w/2 - world.WallThickness; dx <= w/2-1+world.WallThickness; dx++ {
-				for dy := -h/2 - world.WallThickness; dy <= h/2-1+world.WallThickness; dy++ {
-					if tile, err := world.GetTile(x+dx, y+dy); err == nil && tile == TileFloor {
+			for dx := x - world.WallThickness; dx < x+w+world.WallThickness-1; dx++ {
+				for dy := y - world.WallThickness; dy < y+h+world.WallThickness-1; dy++ {
+					if tile, err := world.GetTile(dx, dy); err == nil && tile == TileFloor {
 						return ErrFloorAlreadyPlaced
 					} else if err != nil {
 						return err
@@ -594,18 +592,18 @@ func (world *World) GenerateDungeon(roomCount int) error {
 				}
 			}
 			// Place
-			for dx := -w/2 - world.WallThickness; dx <= w/2-1+world.WallThickness; dx++ {
-				for dy := -h/2 - world.WallThickness; dy <= h/2-1+world.WallThickness; dy++ {
-					if dx < -w/2 || dx > w/2-1 || dy < -h/2 || dy > h/2-1 {
+			for dx := x - world.WallThickness; dx < x+w+world.WallThickness-1; dx++ {
+				for dy := y - world.WallThickness; dy < y+h+world.WallThickness-1; dy++ {
+					if dx < x || dx > x+w || dy < y || dy > y+h {
 						// Temp wall
-						if tile, err := world.GetTile(x+dx, y+dy); err == nil && tile == TileVoid {
-							if err := world.SetTile(x+dx, y+dy, TilePreWall); err != nil {
+						if tile, err := world.GetTile(dx, dy); err == nil && tile == TileVoid {
+							if err := world.SetTile(dx, dy, TilePreWall); err != nil {
 								return err
 							}
 						}
 					} else {
 						// Floor
-						if err := world.SetTile(x+dx, y+dy, TileFloor); err != nil {
+						if err := world.SetTile(dx, dy, TileFloor); err != nil {
 							return err
 						}
 					}
@@ -613,10 +611,10 @@ func (world *World) GenerateDungeon(roomCount int) error {
 			}
 			// Set world.Rooms
 			world.Rooms[Rect{
-				X: x - w/2,
-				Y: y - h/2,
-				W: w / 2 * 2, // todo if w or h is odd, rounding errors occur
-				H: h / 2 * 2,
+				X: x,
+				Y: y,
+				W: w,
+				H: h,
 			}] = struct{}{}
 			return nil
 		}
@@ -629,7 +627,9 @@ func (world *World) GenerateDungeon(roomCount int) error {
 		// Place the first room into the world
 		placeRoom(sx, sy, rw, rh)
 
-		previousRooms := make([]Rect, 1)
+		previousRooms := make([]Rect, 0)
+		previousRooms = append(previousRooms, Rect{X: sx, Y: sy, W: rw, H: rh})
+
 		for rc := roomCount - 1; rc > 0; rc-- {
 			if time.Now().Sub(world.genStartTime) > world.DurationBeforeError {
 				return ErrGenerationTimeout
@@ -637,8 +637,6 @@ func (world *World) GenerateDungeon(roomCount int) error {
 				log.Println("Timeout, retrying gen")
 				return g()
 			}
-
-			log.Println(rc)
 
 			// Offset position by last room
 			osx := sx
@@ -652,40 +650,39 @@ func (world *World) GenerateDungeon(roomCount int) error {
 			var offsetCy, offsetCx int
 			if world.AllowRandomCorridorOffset {
 				offsetCy = (minInt(rh, orh) - ch)
-				offsetCy = randInt(-offsetCy/2+world.CorridorSize/2, offsetCy/2-world.CorridorSize/2)
+				offsetCy = randInt(-world.CorridorSize/2, offsetCy/2-world.CorridorSize/2)
 				offsetCx = (minInt(rw, orw) - cw)
-				offsetCx = randInt(-offsetCx/2+world.CorridorSize/2, offsetCx/2-world.CorridorSize/2)
+				offsetCx = randInt(-world.CorridorSize/2, offsetCx/2-world.CorridorSize/2)
 			}
 			switch rng.Int() % 4 {
 			case 0: // left
 				cw = world.WallThickness
 				ch = world.CorridorSize
-				sx = sx - orw/2 - world.WallThickness - rw/2
-				cx = sx + rw/2
-				cy = cy - (ch / 2) + offsetCy
+				sx = sx - world.WallThickness - rw
+				cx = sx + rw
+				cy = cy + (ch / 2) + offsetCy
 			case 1: // right
 				cw = world.WallThickness
 				ch = world.CorridorSize
-				sx = sx + orw/2 + world.WallThickness + rw/2
-				cx = sx - rw/2 - world.WallThickness
-				cy = cy - (ch / 2) + offsetCy
+				sx = sx + orw + world.WallThickness
+				cx = sx - world.WallThickness
+				cy = cy + (ch / 2) + offsetCy
 			case 2: // up
 				cw = world.CorridorSize
 				ch = world.WallThickness
-				sy = sy - orh/2 - world.WallThickness - rh/2
-				cy = sy + rh/2
-				cx = cx - (cw / 2) + offsetCx
+				sy = sy - world.WallThickness - rh
+				cy = sy + rh
+				cx = cx + (cw / 2) + offsetCx
 			case 3: // down
 				cw = world.CorridorSize
 				ch = world.WallThickness
-				sy = sy + orh/2 + world.WallThickness + rh/2
-				cy = sy - rh/2 - world.WallThickness
-				cx = cx - (cw / 2) + offsetCx
+				sy = sy + orh + world.WallThickness
+				cy = sy - world.WallThickness
+				cx = cx + (cw / 2) + offsetCx
 			}
 
 			if err := placeRoom(sx, sy, rw, rh); err != nil {
-				log.Println("rollback:", err)
-				// rollback
+				log.Println("rollback:", err, sx, sy, rw, rh)
 				c := previousRooms[rng.Int()%len(previousRooms)]
 				sx = c.X
 				sy = c.Y
@@ -705,7 +702,6 @@ func (world *World) GenerateDungeon(roomCount int) error {
 			world.Doors[door] = struct{}{}
 			for x := cx; x < cx+cw; x++ {
 				for y := cy; y < cy+ch; y++ {
-					log.Println(x, y)
 					if tile, err := world.GetTile(x, y); err == nil && tile != TileFloor {
 						if err := world.SetTile(x, y, TileFloor); err != nil {
 						}
