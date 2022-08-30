@@ -18,6 +18,10 @@ const (
 	TileWall
 	TilePreWall // placeholder for walls during generation
 	TileFloor
+
+	TileDoor
+	TileRoomBegin
+	TileRoomEnd
 )
 
 // Tiles aliases
@@ -38,6 +42,12 @@ func (t Tile) String() string {
 		return "⬜"
 	case TileFloor:
 		return "⬛"
+	case TileDoor:
+		return "🚪"
+	case TileRoomBegin:
+		return "🟢"
+	case TileRoomEnd:
+		return "🔴"
 	}
 
 	return "🚧"
@@ -47,14 +57,17 @@ func (t Tile) String() string {
 // processes
 type World struct {
 	Width, Height int
-	Tiles         [][]Tile // indexed [y][x]
-	Border        int      // don't place tiles in this area
+
+	Tiles [][]Tile          // indexed [y][x]
+	Rooms map[Rect]struct{} // todo set these
+	Doors map[Rect]struct{}
 
 	startTime           time.Time // for generation retry
 	DurationBeforeRetry time.Duration
 	genStartTime        time.Time // for error
 	DurationBeforeError time.Duration
 
+	Border                    int // don't place tiles in this area
 	WallThickness             int // how many tiles thick the walls are
 	CorridorSize              int
 	AllowRandomCorridorOffset bool
@@ -62,8 +75,7 @@ type World struct {
 	MaxRoomHeight             int
 	MinRoomWidth              int
 	MinRoomHeight             int
-
-	MinIslandSize int // RandomWalk only; any TileVoid islands < this are filled with TileFloor
+	MinIslandSize             int // RandomWalk only; any TileVoid islands < this are filled with TileFloor
 }
 
 var (
@@ -78,13 +90,16 @@ var (
 	ErrFloorAlreadyPlaced = errors.New("Floor tile already placed")
 )
 
-// ClearTiles clears the tiles from the world
-func (world *World) ClearTiles(width, height int) {
+// ResetWorld clears the tiles from the world
+func (world *World) ResetWorld(width, height int) {
 	tiles := make([][]Tile, height)
 	for i := range tiles {
 		tiles[i] = make([]Tile, width)
 	}
 	world.Tiles = tiles
+
+	world.Rooms = make(map[Rect]struct{})
+	world.Doors = make(map[Rect]struct{})
 }
 
 // NewWorld returns a new World instance
@@ -95,24 +110,22 @@ func NewWorld(width, height int) *World {
 	world := &World{
 		Width:  width,
 		Height: height,
-		Border: 2,
 
 		startTime:           time.Now(),
 		DurationBeforeRetry: time.Millisecond * 250,
 		DurationBeforeError: time.Second * 2,
 
-		WallThickness: 2,
-
+		Border:                    2,
+		WallThickness:             2,
 		CorridorSize:              2,
 		AllowRandomCorridorOffset: false,
 		MaxRoomWidth:              8,
 		MaxRoomHeight:             8,
 		MinRoomWidth:              4,
 		MinRoomHeight:             4,
-
-		MinIslandSize: 26,
+		MinIslandSize:             26,
 	}
-	world.ClearTiles(width, height)
+	world.ResetWorld(width, height)
 	return world
 }
 
@@ -193,13 +206,13 @@ func (world *World) countSurroundingPolar(x, y int, checkType Tile) int {
 	return count
 }
 
-func (world *World) countIslandPolar(x, y int, checkType Tile) (int, map[coord]struct{}) {
+func (world *World) countIslandPolar(x, y int, checkType Tile) (int, map[Rect]struct{}) {
 	// recursively count neigboring tiles
-	m := make(map[coord]struct{})
+	m := make(map[Rect]struct{})
 	var g func(x, y int)
 	g = func(x, y int) {
 		if tile, err := world.GetTile(x, y); err == nil && tile == checkType {
-			c := coord{x: x, y: y}
+			c := Rect{X: x, Y: y}
 			if _, ok := m[c]; !ok {
 				m[c] = struct{}{}
 				g(x+1, y)
@@ -234,12 +247,12 @@ func (world *World) CleanWalls(mustSurroundCount int) {
 // CleanIslands removes the pockets of WallVoids floating in the sea of WallFloors
 func (world *World) CleanIslands() {
 	// Find islands
-	islands := make([]map[coord]struct{}, 0)
+	islands := make([]map[Rect]struct{}, 0)
 	for x := 0; x < world.Width; x++ {
 		for y := 0; y < world.Height; y++ {
 			var found bool
 			for _, i := range islands {
-				c := coord{x: x, y: y}
+				c := Rect{X: x, Y: y}
 				if _, ok := i[c]; ok {
 					found = true
 				}
@@ -250,7 +263,7 @@ func (world *World) CleanIslands() {
 				// Remove island
 				if c < world.MinIslandSize {
 					for co := range m {
-						world.SetTile(co.x, co.y, TileFloor)
+						world.SetTile(co.X, co.Y, TileFloor)
 					}
 				}
 			}
@@ -269,7 +282,7 @@ func (world *World) GenerateRandomWalk(tileCount int) error {
 
 	var g func() error
 	g = func() error {
-		world.ClearTiles(world.Width, world.Height)
+		world.ResetWorld(world.Width, world.Height)
 		x, y := w/2, h/2
 		minX, maxX, minY, maxY := w, 0, h, 0
 		var dx, dy int
@@ -353,9 +366,10 @@ func (world *World) GenerateRandomWalk(tileCount int) error {
 	return g()
 }
 
-type coord struct {
-	x, y int
-	w, h int
+// Rect is used for storing the x,y,w,h of a room or corridor
+type Rect struct {
+	X, Y int
+	W, H int
 }
 
 // GenerateDungeonGrid generates the world using the dungeon grid function
@@ -377,7 +391,7 @@ func (world *World) GenerateDungeonGrid(roomCount int) error {
 
 	var g func() error
 	g = func() error {
-		world.ClearTiles(world.Width, world.Height)
+		world.ResetWorld(world.Width, world.Height)
 		sx, sy := int(mw/2), int(mh/2)
 		world.startTime = time.Now()
 		// Create rooms layout data structure
@@ -386,7 +400,7 @@ func (world *World) GenerateDungeonGrid(roomCount int) error {
 			rooms[i] = make([]bool, mw)
 		}
 
-		previousRooms := make([][]coord, 1)
+		previousRooms := make([][]Rect, 1)
 		for rc := roomCount; rc > 0; rc-- {
 			if time.Now().Sub(world.genStartTime) > world.DurationBeforeError {
 				return ErrGenerationTimeout
@@ -427,11 +441,11 @@ func (world *World) GenerateDungeonGrid(roomCount int) error {
 				for l := 0; l < len(previousRooms); l++ {
 					for i := 0; i < len(previousRooms[l]); i++ { // start from beginning
 						roomCoord := previousRooms[l][i]
-						rc := countAdj(roomCoord.y, roomCoord.x)
+						rc := countAdj(roomCoord.Y, roomCoord.X)
 						if rc >= 0 && rc <= 2 {
-							sx = roomCoord.x
-							sy = roomCoord.y
-							previousRooms = append(previousRooms, make([]coord, 0))
+							sx = roomCoord.X
+							sy = roomCoord.Y
+							previousRooms = append(previousRooms, make([]Rect, 0))
 							goto good
 						}
 					}
@@ -441,13 +455,19 @@ func (world *World) GenerateDungeonGrid(roomCount int) error {
 		good:
 			// Append room coord for rewinding purposes
 			rooms[sy][sx] = true
-			previousRooms[len(previousRooms)-1] = append(previousRooms[len(previousRooms)-1], coord{x: sx, y: sy})
+			previousRooms[len(previousRooms)-1] = append(previousRooms[len(previousRooms)-1], Rect{X: sx, Y: sy})
 		}
 
 		for pr := 0; pr < len(previousRooms); pr++ {
 			// log.Println(previousRooms[pr])
 			for i, cur := range previousRooms[pr] {
-				sy, sx = cur.y, cur.x
+				sy, sx = cur.Y, cur.X
+				world.Rooms[Rect{
+					X: sx*s + sx*world.WallThickness - world.MaxRoomWidth/2,
+					Y: sy*s + sy*world.WallThickness - world.MaxRoomWidth/2,
+					W: world.MaxRoomWidth,
+					H: world.MaxRoomWidth,
+				}] = struct{}{}
 
 				// Fill in the world's tiles with the room
 				for dx := -world.MaxRoomWidth / 2; dx <= world.MaxRoomWidth/2-1; dx++ {
@@ -462,8 +482,11 @@ func (world *World) GenerateDungeonGrid(roomCount int) error {
 
 				// Corridors
 				prev := previousRooms[pr][i-1]
-				dx, dy := cur.x-prev.x, cur.y-prev.y
-				var x1, x2, y1, y2 = prev.x * s, cur.x * s, prev.y * s, cur.y * s
+				dx, dy := cur.X-prev.X, cur.Y-prev.Y
+				x1 := prev.X * s
+				x2 := cur.X * s
+				y1 := prev.Y * s
+				y2 := cur.Y * s
 				var offsetCy, offsetCx int
 				if world.AllowRandomCorridorOffset {
 					offsetCy = (world.MaxRoomWidth - world.CorridorSize)
@@ -472,24 +495,37 @@ func (world *World) GenerateDungeonGrid(roomCount int) error {
 					offsetCx = randInt(-offsetCx/2, offsetCx/2)
 				}
 				switch {
-				case dx == -1: // right
-					x1, x2 = x2, x1
+				case dx == -1: // left
+					x1 = x2 + world.MaxRoomWidth/2
+					x2 = x1 + world.WallThickness
 					y1 = y1 - world.CorridorSize/2 - offsetCy
 					y2 = y2 + world.CorridorSize/2 - offsetCy
 				case dx == 1:
+					x1 = x2 - world.MaxRoomWidth/2 - world.WallThickness
+					x2 = x1 + world.WallThickness
 					y1 = y1 - world.CorridorSize/2 - offsetCy
 					y2 = y2 + world.CorridorSize/2 - offsetCy
 				case dy == -1:
-					y1, y2 = y2, y1
+					y1 = y2 + world.MaxRoomWidth/2
+					y2 = y1 + world.WallThickness
 					x1 = x1 - world.CorridorSize/2 - offsetCx
 					x2 = x2 + world.CorridorSize/2 - offsetCx
 				case dy == 1:
+					y1 = y2 - world.MaxRoomWidth/2 - world.WallThickness
+					y2 = y1 + world.WallThickness
 					x1 = x1 - world.CorridorSize/2 - offsetCx
 					x2 = x2 + world.CorridorSize/2 - offsetCx
 				default:
 					log.Println("somehow, dx,dy > abs 1", cur, prev, dx, dy)
 				}
 
+				cx := Rect{
+					X: x1 + sx*world.WallThickness,
+					Y: y1 + sy*world.WallThickness,
+					W: x2 - x1,
+					H: y2 - y1,
+				}
+				world.Doors[cx] = struct{}{}
 				for x := x1; x < x2; x++ {
 					for y := y1; y < y2; y++ {
 						world.SetTile(x+sx*world.WallThickness, y+sy*world.WallThickness, TileFloor)
@@ -541,7 +577,7 @@ func (world *World) GenerateDungeon(roomCount int) error {
 
 	var g func() error
 	g = func() error {
-		world.ClearTiles(world.Width, world.Height)
+		world.ResetWorld(world.Width, world.Height)
 		world.startTime = time.Now()
 
 		// Helper func to place rooms
@@ -575,6 +611,13 @@ func (world *World) GenerateDungeon(roomCount int) error {
 					}
 				}
 			}
+			// Set world.Rooms
+			world.Rooms[Rect{
+				X: x - w/2,
+				Y: y - h/2,
+				W: w / 2 * 2, // todo if w or h is odd, rounding errors occur
+				H: h / 2 * 2,
+			}] = struct{}{}
 			return nil
 		}
 
@@ -586,7 +629,7 @@ func (world *World) GenerateDungeon(roomCount int) error {
 		// Place the first room into the world
 		placeRoom(sx, sy, rw, rh)
 
-		previousRooms := make([]coord, 1)
+		previousRooms := make([]Rect, 1)
 		for rc := roomCount - 1; rc > 0; rc-- {
 			if time.Now().Sub(world.genStartTime) > world.DurationBeforeError {
 				return ErrGenerationTimeout
@@ -644,15 +687,22 @@ func (world *World) GenerateDungeon(roomCount int) error {
 				log.Println("rollback:", err)
 				// rollback
 				c := previousRooms[rng.Int()%len(previousRooms)]
-				sx = c.x
-				sy = c.y
-				rw = c.w
-				rh = c.h
+				sx = c.X
+				sy = c.Y
+				rw = c.W
+				rh = c.H
 				rc++
 				continue
 			}
 
 			// Corridors
+			door := Rect{
+				X: cx,
+				Y: cy,
+				W: cw,
+				H: ch,
+			}
+			world.Doors[door] = struct{}{}
 			for x := cx; x < cx+cw; x++ {
 				for y := cy; y < cy+ch; y++ {
 					log.Println(x, y)
@@ -663,7 +713,7 @@ func (world *World) GenerateDungeon(roomCount int) error {
 				}
 			}
 
-			previousRooms = append(previousRooms, coord{x: sx, y: sy, w: rw, h: rh})
+			previousRooms = append(previousRooms, Rect{X: sx, Y: sy, W: rw, H: rh})
 		}
 
 		return nil

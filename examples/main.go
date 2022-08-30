@@ -59,6 +59,19 @@ func main() {
 		log.Println(err)
 	}
 
+	// Replace the world's tiles with some debug emojis to see door and room placement
+	for door := range world.Doors {
+		for dx := door.X; dx < door.X+door.W; dx++ {
+			for dy := door.Y; dy < door.Y+door.H; dy++ {
+				world.Tiles[dy][dx] = gen.TileDoor
+			}
+		}
+	}
+	for room := range world.Rooms {
+		world.Tiles[room.Y][room.X] = gen.TileRoomBegin
+		world.Tiles[room.Y+room.H-1][room.X+room.W-1] = gen.TileRoomEnd
+	}
+
 	for y := 0; y < h; y++ {
 		for x := 0; x < w; x++ {
 			fmt.Print(world.Tiles[y][x])
