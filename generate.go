@@ -58,8 +58,8 @@ func (t Tile) String() string {
 type World struct {
 	Width, Height int
 
-	Tiles [][]Tile          // indexed [y][x]
-	Rooms map[Rect]struct{} // todo set these
+	Tiles [][]Tile // indexed [y][x]
+	Rooms map[Rect]struct{}
 	Doors map[Rect]struct{}
 
 	startTime           time.Time // for generation retry
@@ -127,6 +127,28 @@ func NewWorld(width, height int) *World {
 	}
 	world.ResetWorld(width, height)
 	return world
+}
+
+func minInt(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+func absInt(a int) int {
+	if a < 0 {
+		return a * -1
+	}
+	return a
+}
+func randInt(a, b int) int {
+	return rng.Int()%(b+1-a) + a
 }
 
 // GetTile returns a tile
@@ -538,28 +560,6 @@ func (world *World) GenerateDungeonGrid(roomCount int) error {
 	return g()
 }
 
-func minInt(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-func maxInt(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
-}
-func absInt(a int) int {
-	if a < 0 {
-		return a * -1
-	}
-	return a
-}
-func randInt(a, b int) int {
-	return rng.Int()%(b+1-a) + a
-}
-
 // GenerateDungeon generates the world using a more fluid algorithm
 // The world will have randomly sized rooms
 // world.WallThickness, world.MinRoomWidth|Height, world.MaxRoomWidth|Height, world.CorridorSize and
@@ -715,5 +715,4 @@ func (world *World) GenerateDungeon(roomCount int) error {
 		return nil
 	}
 	return g()
-
 }
