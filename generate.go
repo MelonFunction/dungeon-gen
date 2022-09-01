@@ -62,6 +62,8 @@ type World struct {
 	Rooms map[Rect]struct{}
 	Doors map[Rect]struct{}
 
+	ShowErrorMessages bool
+
 	startTime           time.Time // for generation retry
 	DurationBeforeRetry time.Duration
 	genStartTime        time.Time // for error
@@ -110,6 +112,8 @@ func NewWorld(width, height int) *World {
 	world := &World{
 		Width:  width,
 		Height: height,
+
+		ShowErrorMessages: false,
 
 		startTime:           time.Now(),
 		DurationBeforeRetry: time.Millisecond * 250,
@@ -313,7 +317,9 @@ func (world *World) GenerateRandomWalk(tileCount int) error {
 			if time.Now().Sub(world.genStartTime) > world.DurationBeforeError {
 				return ErrGenerationTimeout
 			} else if time.Now().Sub(world.startTime) > world.DurationBeforeRetry {
-				log.Println("Timeout, retrying gen")
+				if world.ShowErrorMessages {
+					log.Println("Timeout, retrying gen")
+				}
 				return g()
 			}
 
@@ -378,7 +384,9 @@ func (world *World) GenerateRandomWalk(tileCount int) error {
 		}
 	done:
 		if !convX {
-			log.Println("no convexity, retrying gen")
+			if world.ShowErrorMessages {
+				log.Println("no convexity, retrying gen")
+			}
 			return g()
 		}
 
@@ -427,7 +435,9 @@ func (world *World) GenerateDungeonGrid(roomCount int) error {
 			if time.Now().Sub(world.genStartTime) > world.DurationBeforeError {
 				return ErrGenerationTimeout
 			} else if time.Now().Sub(world.startTime) > world.DurationBeforeRetry {
-				log.Println("Timeout, retrying gen")
+				if world.ShowErrorMessages {
+					log.Println("Timeout, retrying gen")
+				}
 				return g()
 			}
 			switch rng.Int() % 4 {
@@ -538,7 +548,9 @@ func (world *World) GenerateDungeonGrid(roomCount int) error {
 					x1 = x1 - world.CorridorSize/2 - offsetCx
 					x2 = x2 + world.CorridorSize/2 + world.CorridorSize%2 - offsetCx
 				default:
-					log.Println("somehow, dx,dy > abs 1", cur, prev, dx, dy)
+					if world.ShowErrorMessages {
+						log.Println("somehow, dx,dy > abs 1", cur, prev, dx, dy)
+					}
 				}
 
 				cx := Rect{
@@ -634,7 +646,9 @@ func (world *World) GenerateDungeon(roomCount int) error {
 			if time.Now().Sub(world.genStartTime) > world.DurationBeforeError {
 				return ErrGenerationTimeout
 			} else if time.Now().Sub(world.startTime) > world.DurationBeforeRetry {
-				log.Println("Timeout, retrying gen")
+				if world.ShowErrorMessages {
+					log.Println("Timeout, retrying gen")
+				}
 				return g()
 			}
 
@@ -682,7 +696,9 @@ func (world *World) GenerateDungeon(roomCount int) error {
 			}
 
 			if err := placeRoom(sx, sy, rw, rh); err != nil {
-				log.Println("rollback:", err, sx, sy, rw, rh)
+				if world.ShowErrorMessages {
+					log.Println("rollback:", err, sx, sy, rw, rh)
+				}
 				c := previousRooms[rng.Int()%len(previousRooms)]
 				sx = c.X
 				sy = c.Y
