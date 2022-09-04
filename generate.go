@@ -743,13 +743,20 @@ func (world *World) GenerateDungeon(roomCount int) error {
 				W: cw,
 				H: ch,
 			}
+			if world.WallThickness > 1 {
+				switch cd {
+				case DoorDirectionHorizontal:
+					door.W = 1
+					door.X += (world.WallThickness/2 + world.WallThickness%2) - 1
+				case DoorDirectionVertical:
+					door.H = 1
+					door.Y += (world.WallThickness/2 + world.WallThickness%2) - 1
+				}
+			}
 			world.Doors[door] = cd
 			for x := cx; x < cx+cw; x++ {
 				for y := cy; y < cy+ch; y++ {
-					if tile, err := world.GetTile(x, y); err == nil && tile != TileFloor {
-						if err := world.SetTile(x, y, TileFloor); err != nil {
-						}
-					}
+					world.SetTile(x, y, TileFloor)
 				}
 			}
 

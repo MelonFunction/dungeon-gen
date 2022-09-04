@@ -52,7 +52,7 @@ func main() {
 		err = world.GenerateDungeonGrid(10)
 		world.AddWalls()
 	case Dungeon:
-		world.WallThickness = 1
+		world.WallThickness = 2
 		world.Border = world.WallThickness
 		world.AllowRandomCorridorOffset = true
 		err = world.GenerateDungeon(10)
