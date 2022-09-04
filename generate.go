@@ -24,12 +24,21 @@ const (
 	TileRoomEnd
 )
 
-// Tiles aliases
+// Tiles aliases for creating neat maps manually
 const (
 	V = TileVoid
 	W = TileWall
 	P = TilePreWall
 	F = TileFloor
+)
+
+// DoorDirection specifies the direction of a Door
+type DoorDirection int8
+
+// Directions
+const (
+	DoorDirectionHorizontal DoorDirection = iota
+	DoorDirectionVertical
 )
 
 func (t Tile) String() string {
@@ -60,7 +69,7 @@ type World struct {
 
 	Tiles [][]Tile // indexed [y][x]
 	Rooms map[Rect]struct{}
-	Doors map[Rect]struct{}
+	Doors map[Rect]DoorDirection
 
 	ShowErrorMessages bool
 
@@ -101,7 +110,7 @@ func (world *World) ResetWorld(width, height int) {
 	world.Tiles = tiles
 
 	world.Rooms = make(map[Rect]struct{})
-	world.Doors = make(map[Rect]struct{})
+	world.Doors = make(map[Rect]DoorDirection)
 }
 
 // NewWorld returns a new World instance
@@ -410,14 +419,16 @@ func (world *World) GenerateDungeonGrid(roomCount int) error {
 	world.genStartTime = time.Now()
 
 	s := world.MaxRoomWidth
-	mw := (world.Width - world.Border*2) / s
-	mh := (world.Height - world.Border*2) / s
+	mw := (world.Width-world.Border*2)/(s+world.WallThickness) + 1
+	mh := (world.Height-world.Border*2)/(s+world.WallThickness) + 1
 
-	fmt.Printf("Max grid size is %d x %d, so max roomCount is %d. Use fewer rooms for a better result.\n", mw-2, mh-2, (mw-2)*(mh-2))
-
-	if roomCount > (mw-2)*(mh-2) {
-		return ErrNotEnoughSpace
+	if world.ShowErrorMessages {
+		fmt.Printf("Max grid size is %d x %d, so max roomCount is %d. Use fewer rooms for a better result.\n", mw-1, mh-1, (mw-1)*(mh-1))
 	}
+
+	// if roomCount > (mw-2)*(mh-2) {
+	// 	return ErrNotEnoughSpace
+	// }
 
 	var g func() error
 	g = func() error {
@@ -468,7 +479,7 @@ func (world *World) GenerateDungeonGrid(roomCount int) error {
 				return count
 			}
 
-			if sx >= mw-1 || sx <= 0 || sy >= mh-1 || sy <= 0 || (countAdj(sy, sx) >= 2 && rooms[sy][sx]) {
+			if sx >= mw || sx <= 0 || sy >= mh || sy <= 0 || (countAdj(sy, sx) >= 2 && rooms[sy][sx]) {
 				rc++
 				for l := 0; l < len(previousRooms); l++ {
 					for i := 0; i < len(previousRooms[l]); i++ { // start from beginning
@@ -494,17 +505,18 @@ func (world *World) GenerateDungeonGrid(roomCount int) error {
 			// log.Println(previousRooms[pr])
 			for i, cur := range previousRooms[pr] {
 				sy, sx = cur.Y, cur.X
-				world.Rooms[Rect{
-					X: sx*s + sx*world.WallThickness - world.MaxRoomWidth/2,
-					Y: sy*s + sy*world.WallThickness - world.MaxRoomWidth/2,
+				room := Rect{
+					X: sx*s + sx*world.WallThickness - world.MaxRoomWidth,
+					Y: sy*s + sy*world.WallThickness - world.MaxRoomWidth,
 					W: world.MaxRoomWidth,
 					H: world.MaxRoomWidth,
-				}] = struct{}{}
+				}
+				world.Rooms[room] = struct{}{}
 
 				// Fill in the world's tiles with the room
-				for dx := -world.MaxRoomWidth / 2; dx < world.MaxRoomWidth/2+world.MaxRoomWidth%2; dx++ {
-					for dy := -world.MaxRoomWidth / 2; dy < world.MaxRoomWidth/2+world.MaxRoomWidth%2; dy++ {
-						world.SetTile(sx*s+dx+sx*world.WallThickness, sy*s+dy+sy*world.WallThickness, TileFloor)
+				for dx := room.X; dx < room.X+room.W; dx++ {
+					for dy := room.Y; dy < room.Y+room.H; dy++ {
+						world.SetTile(dx, dy, TileFloor)
 					}
 				}
 
@@ -515,10 +527,11 @@ func (world *World) GenerateDungeonGrid(roomCount int) error {
 				// Corridors
 				prev := previousRooms[pr][i-1]
 				dx, dy := cur.X-prev.X, cur.Y-prev.Y
-				x1 := prev.X * s
-				x2 := cur.X * s
-				y1 := prev.Y * s
-				y2 := cur.Y * s
+				x1 := prev.X*s - world.MaxRoomWidth/2
+				x2 := cur.X*s - world.MaxRoomWidth/2
+				y1 := prev.Y*s - world.MaxRoomWidth/2
+				y2 := cur.Y*s - world.MaxRoomWidth/2
+				cd := DoorDirectionHorizontal
 				var offsetCy, offsetCx int
 				if world.AllowRandomCorridorOffset {
 					offsetCy = (world.MaxRoomWidth - world.CorridorSize)
@@ -542,11 +555,13 @@ func (world *World) GenerateDungeonGrid(roomCount int) error {
 					y2 = y1 + world.WallThickness
 					x1 = x1 - world.CorridorSize/2 - offsetCx
 					x2 = x2 + world.CorridorSize/2 + world.CorridorSize%2 - offsetCx
+					cd = DoorDirectionVertical
 				case dy == 1:
 					y1 = y2 - world.MaxRoomWidth/2 - world.WallThickness
 					y2 = y1 + world.WallThickness
 					x1 = x1 - world.CorridorSize/2 - offsetCx
 					x2 = x2 + world.CorridorSize/2 + world.CorridorSize%2 - offsetCx
+					cd = DoorDirectionVertical
 				default:
 					if world.ShowErrorMessages {
 						log.Println("somehow, dx,dy > abs 1", cur, prev, dx, dy)
@@ -559,7 +574,17 @@ func (world *World) GenerateDungeonGrid(roomCount int) error {
 					W: x2 - x1,
 					H: y2 - y1,
 				}
-				world.Doors[cx] = struct{}{}
+				if world.WallThickness > 1 {
+					switch cd {
+					case DoorDirectionHorizontal:
+						cx.W = 1
+						cx.X += (world.WallThickness/2 + world.WallThickness%2) - 1
+					case DoorDirectionVertical:
+						cx.H = 1
+						cx.Y += (world.WallThickness/2 + world.WallThickness%2) - 1
+					}
+				}
+				world.Doors[cx] = cd
 				for x := x1; x < x2; x++ {
 					for y := y1; y < y2; y++ {
 						world.SetTile(x+sx*world.WallThickness, y+sy*world.WallThickness, TileFloor)
@@ -668,6 +693,7 @@ func (world *World) GenerateDungeon(roomCount int) error {
 				offsetCx = (minInt(rw, orw) - cw)
 				offsetCx = randInt(-world.CorridorSize/2, offsetCx/2-world.CorridorSize/2)
 			}
+			cd := DoorDirectionHorizontal
 			switch rng.Int() % 4 {
 			case 0: // left
 				cw = world.WallThickness
@@ -687,12 +713,14 @@ func (world *World) GenerateDungeon(roomCount int) error {
 				sy = sy - world.WallThickness - rh
 				cy = sy + rh
 				cx = cx + (cw / 2) + offsetCx
+				cd = DoorDirectionVertical
 			case 3: // down
 				cw = world.CorridorSize
 				ch = world.WallThickness
 				sy = sy + orh + world.WallThickness
 				cy = sy - world.WallThickness
 				cx = cx + (cw / 2) + offsetCx
+				cd = DoorDirectionVertical
 			}
 
 			if err := placeRoom(sx, sy, rw, rh); err != nil {
@@ -715,7 +743,7 @@ func (world *World) GenerateDungeon(roomCount int) error {
 				W: cw,
 				H: ch,
 			}
-			world.Doors[door] = struct{}{}
+			world.Doors[door] = cd
 			for x := cx; x < cx+cw; x++ {
 				for y := cy; y < cy+ch; y++ {
 					if tile, err := world.GetTile(x, y); err == nil && tile != TileFloor {

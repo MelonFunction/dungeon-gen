@@ -26,12 +26,14 @@ func main() {
 	world.MaxRoomHeight = 8
 	world.MinRoomWidth = 4
 	world.MinRoomHeight = 4
+	world.ShowErrorMessages = true
 
 	style := Dungeon
 	var err error
 	switch style {
 	case RandomWalk:
 		world.WallThickness = 2
+		world.Border = world.WallThickness
 		world.MinIslandSize = 26 // 26 is default
 		err = world.GenerateRandomWalk((80 * 80) / 4)
 		// clean up the lil floaters
@@ -45,13 +47,15 @@ func main() {
 		world.AddWalls()
 	case DungeonGrid:
 		world.WallThickness = 2
+		world.Border = world.WallThickness
 		world.AllowRandomCorridorOffset = false
-		err = world.GenerateDungeonGrid(5 * 5)
+		err = world.GenerateDungeonGrid(10)
 		world.AddWalls()
 	case Dungeon:
 		world.WallThickness = 1
+		world.Border = world.WallThickness
 		world.AllowRandomCorridorOffset = true
-		err = world.GenerateDungeon(30)
+		err = world.GenerateDungeon(10)
 		world.AddWalls()
 	}
 
