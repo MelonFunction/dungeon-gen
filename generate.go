@@ -545,23 +545,23 @@ func (world *World) GenerateDungeonGrid(roomCount int) error {
 					x2 = x1 + world.WallThickness
 					y1 = y1 - world.CorridorSize/2 - offsetCy
 					y2 = y2 + world.CorridorSize/2 + world.CorridorSize%2 - offsetCy
+					cd = DoorDirectionVertical
 				case dx == 1:
 					x1 = x2 - world.MaxRoomWidth/2 - world.WallThickness
 					x2 = x1 + world.WallThickness
 					y1 = y1 - world.CorridorSize/2 - offsetCy
 					y2 = y2 + world.CorridorSize/2 + world.CorridorSize%2 - offsetCy
+					cd = DoorDirectionVertical
 				case dy == -1:
 					y1 = y2 + world.MaxRoomWidth/2 + world.MaxRoomWidth%2
 					y2 = y1 + world.WallThickness
 					x1 = x1 - world.CorridorSize/2 - offsetCx
 					x2 = x2 + world.CorridorSize/2 + world.CorridorSize%2 - offsetCx
-					cd = DoorDirectionVertical
 				case dy == 1:
 					y1 = y2 - world.MaxRoomWidth/2 - world.WallThickness
 					y2 = y1 + world.WallThickness
 					x1 = x1 - world.CorridorSize/2 - offsetCx
 					x2 = x2 + world.CorridorSize/2 + world.CorridorSize%2 - offsetCx
-					cd = DoorDirectionVertical
 				default:
 					if world.ShowErrorMessages {
 						log.Println("somehow, dx,dy > abs 1", cur, prev, dx, dy)
@@ -577,11 +577,11 @@ func (world *World) GenerateDungeonGrid(roomCount int) error {
 				if world.WallThickness > 1 {
 					switch cd {
 					case DoorDirectionHorizontal:
-						cx.W = 1
-						cx.X += (world.WallThickness/2 + world.WallThickness%2) - 1
-					case DoorDirectionVertical:
 						cx.H = 1
 						cx.Y += (world.WallThickness/2 + world.WallThickness%2) - 1
+					case DoorDirectionVertical:
+						cx.W = 1
+						cx.X += (world.WallThickness/2 + world.WallThickness%2) - 1
 					}
 				}
 				world.Doors[cx] = cd
@@ -701,26 +701,26 @@ func (world *World) GenerateDungeon(roomCount int) error {
 				sx = sx - world.WallThickness - rw
 				cx = sx + rw
 				cy = cy + (ch / 2) + offsetCy
+				cd = DoorDirectionVertical
 			case 1: // right
 				cw = world.WallThickness
 				ch = world.CorridorSize
 				sx = sx + orw + world.WallThickness
 				cx = sx - world.WallThickness
 				cy = cy + (ch / 2) + offsetCy
+				cd = DoorDirectionVertical
 			case 2: // up
 				cw = world.CorridorSize
 				ch = world.WallThickness
 				sy = sy - world.WallThickness - rh
 				cy = sy + rh
 				cx = cx + (cw / 2) + offsetCx
-				cd = DoorDirectionVertical
 			case 3: // down
 				cw = world.CorridorSize
 				ch = world.WallThickness
 				sy = sy + orh + world.WallThickness
 				cy = sy - world.WallThickness
 				cx = cx + (cw / 2) + offsetCx
-				cd = DoorDirectionVertical
 			}
 
 			if err := placeRoom(sx, sy, rw, rh); err != nil {
@@ -746,11 +746,11 @@ func (world *World) GenerateDungeon(roomCount int) error {
 			if world.WallThickness > 1 {
 				switch cd {
 				case DoorDirectionHorizontal:
-					door.W = 1
-					door.X += (world.WallThickness/2 + world.WallThickness%2) - 1
-				case DoorDirectionVertical:
 					door.H = 1
 					door.Y += (world.WallThickness/2 + world.WallThickness%2) - 1
+				case DoorDirectionVertical:
+					door.W = 1
+					door.X += (world.WallThickness/2 + world.WallThickness%2) - 1
 				}
 			}
 			world.Doors[door] = cd
