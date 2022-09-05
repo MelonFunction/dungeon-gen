@@ -21,7 +21,8 @@ func main() {
 	w, h := 80, 80 // default terminal width (hopefully)
 	world := gen.NewWorld(w, h)
 	world.Border = 2
-	world.CorridorSize = 2
+	world.MinCorridorSize = 1
+	world.MaxCorridorSize = 2
 	world.MaxRoomWidth = 8
 	world.MaxRoomHeight = 8
 	world.MinRoomWidth = 4
@@ -52,7 +53,7 @@ func main() {
 		err = world.GenerateDungeonGrid(10)
 		world.AddWalls()
 	case Dungeon:
-		world.WallThickness = 2
+		world.WallThickness = 1
 		world.Border = world.WallThickness
 		world.AllowRandomCorridorOffset = true
 		err = world.GenerateDungeon(10)

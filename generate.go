@@ -80,7 +80,8 @@ type World struct {
 
 	Border                    int // don't place tiles in this area
 	WallThickness             int // how many tiles thick the walls are
-	CorridorSize              int
+	MinCorridorSize           int
+	MaxCorridorSize           int
 	AllowRandomCorridorOffset bool
 	MaxRoomWidth              int
 	MaxRoomHeight             int
@@ -130,7 +131,8 @@ func NewWorld(width, height int) *World {
 
 		Border:                    2,
 		WallThickness:             2,
-		CorridorSize:              2,
+		MinCorridorSize:           1,
+		MaxCorridorSize:           1,
 		AllowRandomCorridorOffset: false,
 		MaxRoomWidth:              8,
 		MaxRoomHeight:             8,
@@ -350,8 +352,10 @@ func (world *World) GenerateRandomWalk(tileCount int) error {
 			}
 			x += dx
 			y += dy
-			for tx := x - world.CorridorSize/2; tx < x+world.CorridorSize/2; tx++ {
-				for ty := y - world.CorridorSize/2; ty < y+world.CorridorSize/2; ty++ {
+
+			cs := randInt(world.MinCorridorSize, world.MaxCorridorSize)
+			for tx := x - cs/2; tx < x+cs/2; tx++ {
+				for ty := y - cs/2; ty < y+cs/2; ty++ {
 					tc++
 					if tile, err := world.GetTile(tx, ty); err == nil && tile != TileVoid {
 						tc--
@@ -532,36 +536,37 @@ func (world *World) GenerateDungeonGrid(roomCount int) error {
 				y1 := prev.Y*s - world.MaxRoomWidth/2
 				y2 := cur.Y*s - world.MaxRoomWidth/2
 				cd := DoorDirectionHorizontal
+				cs := randInt(world.MinCorridorSize, world.MaxCorridorSize)
 				var offsetCy, offsetCx int
 				if world.AllowRandomCorridorOffset {
-					offsetCy = (world.MaxRoomWidth - world.CorridorSize)
+					offsetCy = (world.MaxRoomWidth - cs)
 					offsetCy = randInt(-offsetCy/2, offsetCy/2)
-					offsetCx = (world.MaxRoomWidth - world.CorridorSize)
+					offsetCx = (world.MaxRoomWidth - cs)
 					offsetCx = randInt(-offsetCx/2, offsetCx/2)
 				}
 				switch {
 				case dx == -1: // left
 					x1 = x2 + world.MaxRoomWidth/2 + world.MaxRoomWidth%2
 					x2 = x1 + world.WallThickness
-					y1 = y1 - world.CorridorSize/2 - offsetCy
-					y2 = y2 + world.CorridorSize/2 + world.CorridorSize%2 - offsetCy
+					y1 = y1 - cs/2 - offsetCy
+					y2 = y2 + cs/2 + cs%2 - offsetCy
 					cd = DoorDirectionVertical
 				case dx == 1:
 					x1 = x2 - world.MaxRoomWidth/2 - world.WallThickness
 					x2 = x1 + world.WallThickness
-					y1 = y1 - world.CorridorSize/2 - offsetCy
-					y2 = y2 + world.CorridorSize/2 + world.CorridorSize%2 - offsetCy
+					y1 = y1 - cs/2 - offsetCy
+					y2 = y2 + cs/2 + cs%2 - offsetCy
 					cd = DoorDirectionVertical
 				case dy == -1:
 					y1 = y2 + world.MaxRoomWidth/2 + world.MaxRoomWidth%2
 					y2 = y1 + world.WallThickness
-					x1 = x1 - world.CorridorSize/2 - offsetCx
-					x2 = x2 + world.CorridorSize/2 + world.CorridorSize%2 - offsetCx
+					x1 = x1 - cs/2 - offsetCx
+					x2 = x2 + cs/2 + cs%2 - offsetCx
 				case dy == 1:
 					y1 = y2 - world.MaxRoomWidth/2 - world.WallThickness
 					y2 = y1 + world.WallThickness
-					x1 = x1 - world.CorridorSize/2 - offsetCx
-					x2 = x2 + world.CorridorSize/2 + world.CorridorSize%2 - offsetCx
+					x1 = x1 - cs/2 - offsetCx
+					x2 = x2 + cs/2 + cs%2 - offsetCx
 				default:
 					if world.ShowErrorMessages {
 						log.Println("somehow, dx,dy > abs 1", cur, prev, dx, dy)
@@ -685,38 +690,39 @@ func (world *World) GenerateDungeon(roomCount int) error {
 			rw = randInt(world.MinRoomWidth, world.MaxRoomWidth)
 			rh = randInt(world.MinRoomHeight, world.MaxRoomHeight)
 			cx, cy := osx, osy // corridor position
+			cs := randInt(world.MinCorridorSize, world.MaxCorridorSize)
 			var cw, ch int
 			var offsetCy, offsetCx int
 			if world.AllowRandomCorridorOffset {
 				offsetCy = (minInt(rh, orh) - ch)
-				offsetCy = randInt(-world.CorridorSize/2, offsetCy/2-world.CorridorSize/2)
+				offsetCy = randInt(-cs/2, offsetCy/2-cs/2)
 				offsetCx = (minInt(rw, orw) - cw)
-				offsetCx = randInt(-world.CorridorSize/2, offsetCx/2-world.CorridorSize/2)
+				offsetCx = randInt(-cs/2, offsetCx/2-cs/2)
 			}
 			cd := DoorDirectionHorizontal
 			switch rng.Int() % 4 {
 			case 0: // left
 				cw = world.WallThickness
-				ch = world.CorridorSize
+				ch = cs
 				sx = sx - world.WallThickness - rw
 				cx = sx + rw
 				cy = cy + (ch / 2) + offsetCy
 				cd = DoorDirectionVertical
 			case 1: // right
 				cw = world.WallThickness
-				ch = world.CorridorSize
+				ch = cs
 				sx = sx + orw + world.WallThickness
 				cx = sx - world.WallThickness
 				cy = cy + (ch / 2) + offsetCy
 				cd = DoorDirectionVertical
 			case 2: // up
-				cw = world.CorridorSize
+				cw = cs
 				ch = world.WallThickness
 				sy = sy - world.WallThickness - rh
 				cy = sy + rh
 				cx = cx + (cw / 2) + offsetCx
 			case 3: // down
-				cw = world.CorridorSize
+				cw = cs
 				ch = world.WallThickness
 				sy = sy + orh + world.WallThickness
 				cy = sy - world.WallThickness
